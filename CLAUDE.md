@@ -14,6 +14,12 @@ do it, and let them do the taps on the TV.
 - Certificate passwords are the user's: they type them in their own terminal, never in the chat.
 - Before any commit, check `git status` and `git diff --cached` for passwords, keys, and the email address.
 
+## Commits
+
+- Author: `spapazian <46726975+ste5an@users.noreply.github.com>` (set in this repo's git config).
+- Never add Claude as an author or co-author: no `Co-Authored-By` trailer, no "Generated with Claude Code" line in
+  commits, pull requests or docs.
+
 ## Building and installing
 
 ```bash
