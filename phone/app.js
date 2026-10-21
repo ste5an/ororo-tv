@@ -426,6 +426,11 @@
       return webkitPip ? video.webkitPresentationMode === 'picture-in-picture' : document.pictureInPictureElement === video;
     }
     pipBtn.onclick = function () {
+      // iOS allows Picture in Picture only in Safari itself, not in a home-screen icon added as a full-screen app.
+      if (navigator.standalone) {
+        toast('iPhone only allows Picture in Picture in Safari. Delete this home-screen icon, open ste5an.github.io/ororo-tv in Safari and add it again.');
+        return;
+      }
       try {
         if (webkitPip) video.webkitSetPresentationMode(inPip() ? 'inline' : 'picture-in-picture');
         else if (inPip()) document.exitPictureInPicture();
