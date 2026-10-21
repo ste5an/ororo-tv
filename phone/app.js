@@ -306,8 +306,11 @@
     function start(media, at) {
       remember(item.kind, item.id);
       actions.hidden = true;
-      if (player) player.destroy();
-      player = createPlayer(stage, $(app, '.player-ui'), media, at);
+      if (player && player.swap && media.kind === 'episode') { player.swap(media, at); }
+      else {
+        if (player) player.destroy();
+        player = createPlayer(stage, $(app, '.player-ui'), media, at);
+      }
       now.hidden = !media.label;
       now.textContent = media.label || '';
       window.scrollTo(0, 0);
@@ -549,6 +552,9 @@
     window.addEventListener('pagehide', save);
     saveTimer = setInterval(save, 10000);
 
+    // Loads the video for `media`. Playing the next episode reuses this <video>, so the iPhone keeps full screen
+    // and lets it start without a tap (a brand-new element would be blocked from autoplaying).
+    function loadMedia(startAt) {
     note.textContent = 'Loading…';
     api((media.kind === 'movie' ? '/movies/' : '/episodes/') + media.id).then(function (d) {
       if (closed) return;
@@ -577,8 +583,16 @@
       note.textContent = e.message;
       if (e.status === 401) { forget('creds'); loaded = false; route(); }
     });
+    }
+    loadMedia(startAt);
 
     return {
+      swap: function (next, at) {
+        subs.forEach(function (sub) { if (sub.track) { URL.revokeObjectURL(sub.track.src); video.removeChild(sub.track); } });
+        subs = []; variants = []; master = mp4 = currentUrl = '';
+        media = next;
+        loadMedia(at);
+      },
       destroy: function () {
         closed = true;
         save();
