@@ -13,8 +13,13 @@ every language Ororo has for the video.
 - **Movies, Shows, Search and Continue** tabs, sorted by Popular, New, Top rated or A–Z.
 - **Show pages** with seasons and episodes. Watched episodes get a ✓, and the next one to watch is already selected.
 - **A player made for the remote:**
-  - OK pauses; ◀ ▶ skip, faster while held.
-  - ▼ shows the **Subtitles** button: OK opens the list (Off plus every language), ▲ ▼ pick one, OK turns it on.
+  - ◀ ▶ skip back or forward **10 seconds**. Quick presses add up (three presses = 30 s) into one jump.
+  - **Hold** ◀ or ▶ to scrub, faster the longer you hold (10 s, then 30 s, then 60 s steps). A marker on the
+    progress bar shows where you'll land; let go to jump there. The remote's ⏪ ⏩ buttons do the same. OK pauses.
+  - ▼ shows the buttons: **−10s, Play/Pause, +10s, Subtitles, Quality**. ◀ ▶ choose, OK opens, ▲ hides them.
+  - **Subtitles**: Off plus every language Ororo has for the video.
+  - **Quality**: Auto (the TV adapts to your internet), each resolution in the stream (1080p, 720p…), or the MP4
+    file. Your choice is remembered.
   - Back leaves and saves your place. The remote's play, pause, rewind and fast-forward buttons work too.
 - **Plays the next episode** by itself when one ends.
 - **Big, readable subtitles** drawn by the app, with the TV's own subtitles as a fallback.
@@ -85,7 +90,9 @@ Updates must be signed with the same certificate as the installed copy. Otherwis
 
 | File | What it is |
 |---|---|
-| [`www/app.js`](www/app.js) | The whole app: API, screens, remote navigation, player, subtitles |
+| [`www/app.js`](www/app.js) | The app: API, screens, remote navigation, player, subtitles, quality |
+| [`www/seek.js`](www/seek.js) | Netflix-style seeking (taps add up, hold to scrub), separate from the UI |
+| [`test/seek.test.js`](test/seek.test.js) | Tests for the seeking: `node --test test/seek.test.js` |
 | [`www/style.css`](www/style.css) | The look, laid out for 1920×1080 |
 | [`config.xml`](config.xml) | The Tizen app manifest |
 | [`build.py`](build.py) | Build, sign and install |

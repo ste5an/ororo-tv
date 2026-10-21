@@ -112,9 +112,19 @@ input.focus { border-color: #fff; }
 .osd .sub { margin-top: 6px; font-size: 28px; color: #c4c8cf; }
 .track { position: relative; height: 10px; margin: 30px 0 16px; border-radius: 5px; background: rgba(255,255,255,.25); }
 .track i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; background: var(--accent); }
-.row { display: flex; justify-content: space-between; font-size: 26px; color: #c4c8cf; }
+.row { display: flex; justify-content: space-between; font-size: 26px; color: #c4c8cf; white-space: pre; }
 .osd-actions { margin-top: 26px; }
-.pbtn { display: inline-block; padding: 14px 30px; border-radius: 10px; background: rgba(255,255,255,.16); font-size: 26px; font-weight: 600; }
+.pbtn { display: inline-block; margin-right: 14px; padding: 14px 30px; border-radius: 10px; background: rgba(255,255,255,.16); font-size: 26px; font-weight: 600; }
+.skip {
+  position: absolute; left: 50%; top: 38%; transform: translateX(-50%); padding: 22px 48px; border-radius: 24px;
+  background: rgba(0,0,0,.62); text-align: center; white-space: pre;
+}
+.skip-big { font-size: 56px; font-weight: 700; }
+.skip-small { margin-top: 6px; font-size: 26px; color: #c4c8cf; }
+.track b {
+  position: absolute; top: -11px; width: 8px; height: 32px; margin-left: -4px; border-radius: 4px;
+  background: #fff; box-shadow: 0 0 0 3px rgba(0,0,0,.4);
+}
 .pbtn.focus { background: #fff; color: #111; }
 .menu {
   position: absolute; top: 0; right: 0; bottom: 0; width: 600px; padding: 80px 50px;

@@ -281,11 +281,16 @@
     var k = KEYS[e.keyCode], s = top();
     if (!k || !s) return;
     e.preventDefault();
-    if (!document.getElementById('busy').hidden && k !== 'back') return;
+    if (!document.getElementById('busy').hidden && k !== 'back' && !s.keysWhileBusy) return;
     if (s.key && s.key(k)) return;
     if (k === 'back') { if (!s.back || !s.back()) pop(); }
     else if (k === 'left' || k === 'right' || k === 'up' || k === 'down') move(k);
     else if (k === 'enter' && focused && s.el.contains(focused)) activate(focused);
+  });
+
+  document.addEventListener('keyup', function (e) {
+    var k = KEYS[e.keyCode], s = top();
+    if (k && s && s.keyUp && !(document.activeElement && document.activeElement.tagName === 'INPUT')) s.keyUp(k);
   });
 
   function onClick(el, fn) { el.addEventListener('click', fn); return el; }
@@ -584,19 +589,47 @@
   }
 
   function playerScreen(media, startAt) {
-    var s = { el: h('div', 'screen player') };
+    var s = { el: h('div', 'screen player'), keysWhileBusy: true };
     s.el.innerHTML =
       '<video preload="auto"></video><div class="subs"></div><div class="paused-icon" hidden>❚❚</div>' +
-      '<div class="osd"><div class="ttl"></div><div class="sub"></div><div class="track"><i></i></div>' +
-      '<div class="row"><span class="time"></span><span class="hint"></span></div>' +
-      '<div class="osd-actions"><div class="pbtn cc"></div></div></div>' +
-      '<div class="menu" hidden><div class="menu-title">Subtitles</div><div class="menu-list"></div><div class="menu-note"></div></div>';
-    var video = $(s.el, 'video'), subsEl = $(s.el, '.subs'), pausedIcon = $(s.el, '.paused-icon');
-    var bar = $(s.el, '.track i'), timeEl = $(s.el, '.time'), hintEl = $(s.el, '.hint');
-    var sources = [], srcIndex = 0, resume = 0, subsList = [], subIdx = -1, cues = [], shownText = '', sentKeys = '';
-    var ccBtn = $(s.el, '.cc'), menu = $(s.el, '.menu'), menuList = $(s.el, '.menu-list'), menuNote = $(s.el, '.menu-note');
-    var ccFocus = false, menuIdx = 0, subError = '';
-    var osdTimer, saveTimer, subTimer, seekTarget = null, seekTimer, seekStep = 10, lastSeek = 0, closed = false;
+      '<div class="skip" hidden><div class="skip-big"></div><div class="skip-small"></div></div>' +
+      '<div class="osd"><div class="ttl"></div><div class="sub"></div><div class="track"><i></i><b hidden></b></div>' +
+      '<div class="row"><span class="time"></span><span class="hint"></span></div><div class="osd-actions"></div></div>' +
+      '<div class="menu" hidden><div class="menu-title"></div><div class="menu-list"></div><div class="menu-note"></div></div>';
+    var video = $(s.el, 'video'), subsEl = $(s.el, '.subs'), pausedIcon = $(s.el, '.paused-icon'), skipEl = $(s.el, '.skip');
+    var bar = $(s.el, '.track i'), head = $(s.el, '.track b'), timeEl = $(s.el, '.time'), hintEl = $(s.el, '.hint'), actionsEl = $(s.el, '.osd-actions');
+    var menu = $(s.el, '.menu'), menuList = $(s.el, '.menu-list'), menuNote = $(s.el, '.menu-note');
+    var master = '', mp4 = '', currentUrl = '', variants = [], quality = 0, resume = 0;
+    var subsList = [], subIdx = -1, cues = [], shownText = '', sentKeys = '', subError = '', qualityNote = '';
+    var btnFocus = -1, menuState = null, closed = false;
+    var osdTimer, saveTimer, subTimer, skipHideTimer;
+
+    // Seeking (www/seek.js): ◀ ▶ ±10 s, quick presses add up, holding scrubs faster; one real seek at the end.
+    var seeker = SeekController(SeekController.videoAdapter(video));
+    seeker.onChange(function (snap) {
+      clearTimeout(skipHideTimer);
+      if (snap.target == null) {
+        skipHideTimer = setTimeout(function () { skipEl.hidden = true; }, 600);
+        osd(true);                                   // restarts the auto-hide now the seek is done
+        return;
+      }
+      var d = snap.delta, abs = Math.abs(d);
+      $(skipEl, '.skip-big').textContent = (d < 0 ? '◀◀  −' : '▶▶  +') + (abs < 60 ? Math.round(abs) + ' s' : clock(abs));
+      $(skipEl, '.skip-small').textContent = snap.state === 'scrubbing' ? clock(snap.target) + '   ·   ' + snap.scrubStep + ' s steps'
+        : snap.state === 'committing' ? 'Going to ' + clock(snap.target) + '…' : clock(snap.target);
+      skipEl.hidden = false;
+      osd(true);
+    });
+
+    // The row of buttons under the progress bar (▼ to reach it).
+    var buttons = [
+      { label: function () { return '◀◀  10s'; }, act: function () { seeker.press(-1); seeker.release(-1); } },
+      { label: function () { return video.paused ? '▶  Play' : '❚❚  Pause'; }, act: toggle },
+      { label: function () { return '10s  ▶▶'; }, act: function () { seeker.press(1); seeker.release(1); } },
+      { label: function () { return 'CC   ' + (subIdx < 0 ? 'Subtitles off' : subLabel(subIdx)); }, act: openSubs },
+      { label: function () { return 'Quality: ' + qualityOptions()[quality].label; }, act: openQuality }
+    ];
+    buttons.forEach(function (b) { b.el = actionsEl.appendChild(h('div', 'pbtn')); });
 
     function key() { return media.kind === 'movie' ? 'movie' : 'episode'; }
     function save() {
@@ -605,49 +638,68 @@
     function osd(on) {
       clearTimeout(osdTimer);
       s.el.classList.toggle('osd-on', on);
-      if (on && !video.paused && !ccFocus && menu.hidden) osdTimer = setTimeout(function () { s.el.classList.remove('osd-on'); }, 4000);
+      if (on && !video.paused && btnFocus < 0 && menu.hidden && !seeker.busy()) osdTimer = setTimeout(function () { s.el.classList.remove('osd-on'); }, 4000);
       renderOsd();
     }
     function renderOsd() {
-      var t = seekTarget != null ? seekTarget : video.currentTime, d = video.duration;
-      bar.style.width = (isFinite(d) && d ? Math.min(100, t / d * 100) : 0).toFixed(2) + '%';
+      var target = seeker.snapshot().target, t = target != null ? target : video.currentTime, d = video.duration;
+      var pct = function (x) { return (isFinite(d) && d ? Math.min(100, Math.max(0, x / d * 100)) : 0).toFixed(2) + '%'; };
+      bar.style.width = pct(video.currentTime);
+      head.hidden = target == null;
+      if (target != null) head.style.left = pct(target);
       timeEl.textContent = clock(t) + (isFinite(d) ? '  /  ' + clock(d) : '');
-      hintEl.textContent = ccFocus ? 'OK  choose subtitles    ◀ ▶ seek' : '◀ ▶ seek    ▼ subtitles    OK pause';
-      ccBtn.textContent = 'CC   Subtitles: ' + (subIdx < 0 ? 'Off' : subLabel(subIdx));
-      ccBtn.classList.toggle('focus', ccFocus);
+      hintEl.textContent = btnFocus >= 0 ? '◀ ▶ choose    OK select    ▲ hide'
+        : '◀ ▶ 10 s, hold to scrub    ▼ subtitles, quality    OK pause';
+      buttons.forEach(function (b, i) {
+        b.el.textContent = b.label();
+        b.el.classList.toggle('focus', i === btnFocus);
+      });
     }
 
-    // The subtitles list: Off, then every language Ororo has for this video.
-    function subLabel(i) {
-      var lang = subsList[i].lang, same = subsList.filter(function (x) { return x.lang === lang; }).length;
-      var nth = subsList.slice(0, i + 1).filter(function (x) { return x.lang === lang; }).length;
-      return langName(lang) + (same > 1 ? ' ' + nth : '');
-    }
-    function openMenu() {
-      menuIdx = subIdx + 1;
+    // A side menu: a title, options, ✓ on the current one. Used for subtitles and quality.
+    function openMenu(m) {
+      menuState = m;
+      m.idx = m.current;
       menu.hidden = false;
       renderMenu();
       osd(true);
     }
     function closeMenu() {
       menu.hidden = true;
+      menuState = null;
       osd(true);
     }
     function renderMenu() {
+      var m = menuState;
+      $(menu, '.menu-title').textContent = m.title;
       menuList.innerHTML = '';
-      ['Off'].concat(subsList.map(function (x, i) { return subLabel(i); })).forEach(function (label, i) {
-        var row = menuList.appendChild(h('div', 'menu-item' + (i === menuIdx ? ' on' : '')));
+      m.items.forEach(function (label, i) {
+        var row = menuList.appendChild(h('div', 'menu-item' + (i === m.idx ? ' on' : '')));
         row.appendChild(h('span', '', label));
-        if (i === subIdx + 1) row.appendChild(h('span', 'tick', '✓'));
+        if (i === m.current) row.appendChild(h('span', 'tick', '✓'));
       });
-      var on = menuList.children[menuIdx];
+      var on = menuList.children[m.idx];
       if (on) on.scrollIntoView({ block: 'nearest' });
-      menuNote.textContent = !subsList.length
-        ? 'Ororo has no subtitles for this video.' + (sentKeys ? ' (It sent: ' + sentKeys + ')' : '')
-        : subError ? 'Last problem: ' + subError : '';
+      menuNote.textContent = m.note || '';
     }
 
-    // Subtitles: fetched and drawn here (bigger and easier to read than the TV's own), the TV's <track> if that fails.
+    // ------------------------------------------------ subtitles: fetched and drawn here, the TV's <track> if that fails
+
+    function subLabel(i) {
+      var lang = subsList[i].lang, same = subsList.filter(function (x) { return x.lang === lang; }).length;
+      var nth = subsList.slice(0, i + 1).filter(function (x) { return x.lang === lang; }).length;
+      return langName(lang) + (same > 1 ? ' ' + nth : '');
+    }
+    function openSubs() {
+      openMenu({
+        title: 'Subtitles',
+        items: ['Off'].concat(subsList.map(function (x, i) { return subLabel(i); })),
+        current: subIdx + 1,
+        pick: function (i) { setSub(i - 1); },
+        note: !subsList.length ? 'Ororo has no subtitles for this video.' + (sentKeys ? ' (It sent: ' + sentKeys + ')' : '')
+          : subError ? 'Last problem: ' + subError : ''
+      });
+    }
     function parseSubs(text) {
       var out = [];
       text.replace(/^﻿/, '').replace(/\r/g, '').split(/\n\s*\n/).forEach(function (block) {
@@ -732,13 +784,78 @@
       return i >= 0 ? i : langs.indexOf('en');
     }
 
-    function trySource(i) {
-      srcIndex = i;
-      video.src = sources[i];
+    // ------------------------------------------------ quality: Auto (the TV adapts), each resolution in the HLS stream, the MP4
+
+    function qualityOptions() {
+      var opts = [{ label: 'Auto', url: master || mp4 }];
+      variants.forEach(function (v) { opts.push({ label: v.label, url: v.url, height: v.height }); });
+      if (master && mp4) opts.push({ label: 'MP4 file', url: mp4 });
+      return opts;
+    }
+    function loadVariants() {
+      if (!master) return Promise.resolve([]);
+      return timed(fetch(master).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      }), 5000).then(function (text) {
+        var lines = text.split(/\r?\n/), byHeight = {};
+        lines.forEach(function (line, i) {
+          if (line.indexOf('#EXT-X-STREAM-INF') !== 0) return;
+          var res = /RESOLUTION=(\d+)x(\d+)/.exec(line), bw = /BANDWIDTH=(\d+)/.exec(line), uri = '';
+          for (var j = i + 1; j < lines.length && !uri; j++) if (lines[j].trim() && lines[j].charAt(0) !== '#') uri = lines[j].trim();
+          if (!uri) return;
+          var v = { height: res ? +res[2] : 0, bw: bw ? +bw[1] : 0, url: new URL(uri, master).href };
+          v.label = v.height ? v.height + 'p' : Math.round(v.bw / 1000) + ' kbps';
+          if (!byHeight[v.label] || byHeight[v.label].bw < v.bw) byHeight[v.label] = v;
+        });
+        var list = Object.keys(byHeight).map(function (k) { return byHeight[k]; });
+        qualityNote = list.length ? '' : 'This stream has only one quality.';
+        return list.sort(function (a, b) { return b.height - a.height || b.bw - a.bw; });
+      }).catch(function (e) {
+        qualityNote = 'Couldn’t read the list of qualities (' + e.message + ').';
+        return [];
+      });
+    }
+    function preferredQuality() {
+      var pref = load('quality', 'Auto'), opts = qualityOptions(), want = parseInt(pref, 10), best = 0;
+      opts.forEach(function (o, i) { if (o.label === pref) best = i; });
+      if (!best && want) {
+        // That exact one isn't offered: take the highest one that isn't above it.
+        opts.forEach(function (o, i) { if (o.height && o.height <= want && (!best || o.height > opts[best].height)) best = i; });
+      }
+      return best;
+    }
+    function openQuality() {
+      openMenu({
+        title: 'Quality',
+        items: qualityOptions().map(function (o) { return o.label; }),
+        current: quality,
+        pick: function (i) {
+          if (i === quality) return;
+          store('quality', qualityOptions()[i].label);
+          setQuality(i);
+        },
+        note: qualityNote || 'Auto lets the TV pick the best quality your internet can keep up with.'
+      });
+    }
+    function setQuality(i) {
+      var target = seeker.snapshot().target, at = target != null ? target : video.currentTime;
+      seeker.cancel();
+      quality = i;
+      busy(true);
+      playUrl(qualityOptions()[i].url, at);
+    }
+    function playUrl(url, at) {
+      currentUrl = url;
+      resume = at || 0;
+      video.src = url;
       video.load();
       var p = video.play();
       if (p && p.catch) p.catch(function () {});
     }
+
+    // ------------------------------------------------ loading, events
+
     function begin(at) {
       busy(true, media.sub || media.title);
       osd(true);
@@ -746,15 +863,19 @@
       $(s.el, '.sub').textContent = media.sub || '';
       api((media.kind === 'movie' ? '/movies/' : '/episodes/') + media.id).then(function (d) {
         if (closed) return;
-        var url = d.url ? String(d.url).replace('playlist_fmp4.m3u8', 'playlist.m3u8') : '';
-        sources = [url, d.download_url].filter(Boolean).map(abs);
-        if (!sources.length) throw new Error('Ororo didn’t give a video for this one.');
+        master = d.url ? abs(String(d.url).replace('playlist_fmp4.m3u8', 'playlist.m3u8')) : '';
+        mp4 = abs(d.download_url);
+        if (!master && !mp4) throw new Error('Ororo didn’t give a video for this one.');
         subsList = subtitleList(d.subtitles || d.subs || d.subtitle_files);
         sentKeys = Object.keys(d).join(', ');
         if (!subsList.length && d.subtitles) sentKeys += ' — subtitles: ' + JSON.stringify(d.subtitles).slice(0, 120);
         setSub(pickSub(), true);
-        resume = at || 0;
-        trySource(0);
+        return loadVariants().then(function (list) {
+          if (closed) return;
+          variants = list;
+          quality = preferredQuality();
+          playUrl(qualityOptions()[quality].url, at);
+        });
       }).catch(function (e) {
         handle(e);
         if (!closed) pop();
@@ -779,11 +900,19 @@
     video.addEventListener('waiting', function () { if (!video.paused) busy(true); });
     video.addEventListener('timeupdate', function () { if (s.el.classList.contains('osd-on')) renderOsd(); });
     video.addEventListener('error', function () {
-      if (closed) return;
-      if (srcIndex + 1 < sources.length) { trySource(srcIndex + 1); return; }
-      busy(false);
-      toast('This video won’t play on this TV.');
-      pop();
+      if (closed || !currentUrl) return;
+      var at = video.currentTime || resume;
+      if (quality !== 0) {
+        toast(qualityOptions()[quality].label + ' didn’t play on this TV. Back to Auto.');
+        quality = 0;
+        playUrl(qualityOptions()[0].url, at);
+      } else if (mp4 && currentUrl !== mp4) {
+        playUrl(mp4, at);
+      } else {
+        busy(false);
+        toast('This video won’t play on this TV.');
+        pop();
+      }
     });
     video.addEventListener('ended', function () {
       savePos(key(), media.id, video.duration, video.duration);
@@ -794,61 +923,63 @@
       media.sub = 'Season ' + nextEp.season + ' · Episode ' + nextEp.number + (nextEp.title ? ' · ' + nextEp.title : '');
       if (media.onChange) media.onChange(nextEp);
       toast('Next: ' + media.sub);
+      currentUrl = '';
+      variants = [];
+      seeker.cancel();
       begin(resumeAt(posOf('episode', nextEp.id)));
     });
 
-    function seekBy(sign) {
-      if (!isFinite(video.duration)) return;
-      var now = Date.now();
-      seekStep = now - lastSeek < 600 ? Math.min(seekStep * 1.5, 300) : 10;   // hold the button to go faster
-      lastSeek = now;
-      if (seekTarget == null) seekTarget = video.currentTime;
-      seekTarget = Math.max(0, Math.min(video.duration - 3, seekTarget + sign * seekStep));
-      osd(true);
-      clearTimeout(seekTimer);
-      seekTimer = setTimeout(function () {
-        video.currentTime = seekTarget;
-        seekTarget = null;
-        cues.length && tickSubs();
-      }, 650);
-    }
     function toggle() {
       var p;
       if (video.paused) { p = video.play(); if (p && p.catch) p.catch(function () {}); }
       else video.pause();
+      renderOsd();
     }
 
     s.key = function (k) {
-      if (!menu.hidden) {
-        if (k === 'up') menuIdx = Math.max(0, menuIdx - 1);
-        else if (k === 'down') menuIdx = Math.min(subsList.length, menuIdx + 1);
-        else if (k === 'enter') { setSub(menuIdx - 1); closeMenu(); return true; }
+      if (k === 'play') { if (video.paused) toggle(); return true; }
+      if (k === 'pause') { if (!video.paused) toggle(); return true; }
+      if (k === 'playpause') { toggle(); return true; }
+      if (k === 'rw' || k === 'ff') { seeker.press(k === 'ff' ? 1 : -1); return true; }
+      if (k === 'stop') { pop(); return true; }
+      if (menuState) {
+        if (k === 'up') menuState.idx = Math.max(0, menuState.idx - 1);
+        else if (k === 'down') menuState.idx = Math.min(menuState.items.length - 1, menuState.idx + 1);
+        else if (k === 'enter') { var m = menuState; closeMenu(); m.pick(m.idx); return true; }
         else if (k === 'back' || k === 'left') { closeMenu(); return true; }
-        else if (k === 'playpause' || k === 'play' || k === 'pause') { toggle(); return true; }
         else return true;
         renderMenu();
         return true;
       }
-      if (k === 'enter' && ccFocus) openMenu();
-      else if (k === 'enter' || k === 'playpause') toggle();
-      else if (k === 'play') { if (video.paused) toggle(); }
-      else if (k === 'pause') { if (!video.paused) video.pause(); }
-      else if (k === 'left' || k === 'rw') { ccFocus = false; seekBy(-1); }
-      else if (k === 'right' || k === 'ff') { ccFocus = false; seekBy(1); }
-      else if (k === 'down') { ccFocus = true; osd(true); }
-      else if (k === 'up') { ccFocus = false; osd(true); }
-      else if (k === 'back' && ccFocus) { ccFocus = false; osd(false); }
-      else if (k === 'stop') pop();
+      if (btnFocus >= 0) {
+        if (k === 'left') btnFocus = Math.max(0, btnFocus - 1);
+        else if (k === 'right') btnFocus = Math.min(buttons.length - 1, btnFocus + 1);
+        else if (k === 'enter') buttons[btnFocus].act();
+        else if (k === 'up' || k === 'back') { btnFocus = -1; osd(k === 'up'); return true; }
+        osd(true);
+        return true;
+      }
+      if (k === 'left') seeker.press(-1);
+      else if (k === 'right') seeker.press(1);
+      else if (k === 'enter') toggle();
+      else if (k === 'down') { btnFocus = 1; osd(true); }
+      else if (k === 'up') osd(true);
       else return false;
       return true;
     };
+    // Key releases end a hold (scrub) or start the short wait that adds quick presses up.
+    s.keyUp = function (k) {
+      if (k === 'left' || k === 'rw') seeker.release(-1);
+      else if (k === 'right' || k === 'ff') seeker.release(1);
+    };
     s.close = function () {
       closed = true;
+      seeker.cancel();
       save();
       clearInterval(saveTimer);
       clearInterval(subTimer);
       clearTimeout(osdTimer);
-      clearTimeout(seekTimer);
+      clearTimeout(skipHideTimer);
       busy(false);
       screensaver(true);
       video.pause();
