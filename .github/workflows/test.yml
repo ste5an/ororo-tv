@@ -1,0 +1,30 @@
+# Checks every push and pull request: seek logic tests, JavaScript syntax, and that the TV package builds.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Seek logic
+        run: node --test test/seek.test.js
+      - name: Syntax
+        run: |
+          node --check www/app.js
+          node --check www/seek.js
+          node --check phone/app.js
+      - name: No ?. or ?? in the TV code (Tizen 6 is Chromium 76)
+        run: "! grep -nE '\\?\\.[A-Za-z_(\\[]|\\?\\?' www/app.js www/seek.js"
+      - name: TV package builds
+        run: python3 build.py
