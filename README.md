@@ -23,7 +23,16 @@ every language Ororo has for the video.
 - **Plays the next episode** by itself when one ends.
 - **Big, readable subtitles** drawn by the app, with the TV's own subtitles as a fallback.
 
-## Install
+## On iPhone
+
+Open **https://ste5an.github.io/ororo-tv/** in Safari, tap **Share → Add to Home Screen**, and open *Ororo* from
+its icon: it runs full screen like an app. Sign in with your ororo.tv email and password (they stay on the phone).
+
+Movies, shows, search and Continue; the video plays at the top of the page with the iPhone's own controls (full
+screen, AirPlay, picture-in-picture), with « 10s / 10s » buttons (quick taps add up), a subtitles picker (they show
+in full screen too) and a quality picker. Your place is saved on the phone; the TV keeps its own.
+
+## Install on the TV
 
 You need a Samsung TV from 2017 or newer (Tizen 3+) and a Mac or Linux computer on the same Wi-Fi.
 
@@ -95,6 +104,7 @@ Updates must be signed with the same certificate as the installed copy. Otherwis
 | [`www/style.css`](www/style.css) | The look, laid out for 1920×1080 |
 | [`config.xml`](config.xml) | The Tizen app manifest |
 | [`build.py`](build.py) | Build, sign and install |
+| [`phone/`](phone) | The iPhone web app, published to GitHub Pages by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) with `www/seek.js` and the icon |
 | [`tools/make_icon.py`](tools/make_icon.py) | Draws the icon without any libraries |
 
 ## License

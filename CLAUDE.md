@@ -6,6 +6,15 @@ packed by `build.py` into `OroroTV.wgt`. App id `OroroTVapp.OroroTV`. The README
 The person you're helping may not be technical. Keep it short, say what you're about to do on their TV before you
 do it, and let them do the taps on the TV.
 
+## The iPhone web app (`phone/`)
+
+`phone/index.html`, `style.css`, `app.js`, `manifest.webmanifest`: the same Ororo API, storage keys and
+`SeekController` as the TV app, laid out for touch, with hash routes `#/`, `#/movie/ID`, `#/show/ID`. Playback uses
+the iPhone's own `<video controls playsinline>`; subtitles are fetched, converted to WebVTT and added as blob
+`<track>`s so the full-screen player shows them. A push to `main` touching `phone/`, `www/seek.js` or `www/icon.png`
+publishes it to https://ste5an.github.io/ororo-tv/ (`.github/workflows/pages.yml` copies `www/seek.js` and
+`www/icon.png` next to it). To try it locally, copy those two files into a copy of `phone/` and open `index.html`.
+
 ## Secrets
 
 - The Ororo email and password live only in `credentials.properties` (gitignored) or in the TV's local storage.
