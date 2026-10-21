@@ -1,7 +1,7 @@
 /*
  * Ororo TV for iPhone: a web app (Safari → Share → Add to Home Screen) for ororo.tv's movies and shows.
  * Same Ororo API and storage keys as the TV app (www/app.js), laid out for touch. Playback uses the iPhone's own
- * video controls (full screen, AirPlay, picture-in-picture); subtitles become <track>s so they show there too.
+ * video controls (full screen, AirPlay); subtitles become <track>s so they show there too.
  */
 (function () {
   'use strict';
