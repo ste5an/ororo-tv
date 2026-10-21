@@ -50,14 +50,20 @@ python3 build.py --sign <profile> --install <TV IP>
 - **Keys:** `KEYS` maps Tizen key codes. Media keys are registered with `tizen.tvinputdevice.registerKeyBatch`. The
   TV keyboard's Done and Cancel are 65376 and 65385.
 - **Player:** HLS (`playlist_fmp4.m3u8` swapped for `playlist.m3u8`), with `download_url` as the fallback.
+  Settings in `PLAYER` (app.js): step, debounceMs, indicatorMs, controlsKeys, controlsIdleMs.
+  Focus has two modes: `'video'` (bar hidden, the picture has focus: ◀ ▶ skip, OK pauses, `controlsKeys` open the
+  bar, Back leaves) and `'controls'` (bar open: `ctrlFocus` −1 = progress bar, 0… = `buttons`; Back closes it; it
+  closes itself after `controlsIdleMs` while playing). Skips in `'video'` mode never open the bar; they show the
+  side indicator (`showSkip`: `.skipper.left/.right`, ripple restarted by toggling `.pulse`).
   Seeking lives in `www/seek.js` (`SeekController`, no UI): the player feeds it key-downs (`press`, auto-repeats
-  included) and key-ups (`release`, from the global `keyup` → `s.keyUp`). States: idle → accumulating (±10 s per
-  press, one seek after the debounce, which starts on key-up) → scrubbing (held past 500 ms: 10/30/60 s steps per
-  250 ms tick) → committing (one `video.currentTime` set, waits for `seeked`, keeps play/pause; input meanwhile is
-  queued). Its `onChange` drives the center indicator and the marker on the progress bar. ▼ focuses the `buttons` row; the side `menu`
-  (`openMenu({title, items, current, pick, note})`) serves Subtitles and Quality. Quality reads the master
-  playlist's `#EXT-X-STREAM-INF` variants (`loadVariants`) and plays the chosen variant's URL; a failing choice
-  falls back to Auto, then to the MP4. The player sets `keysWhileBusy` so the remote works while it buffers.
+  included) and key-ups (`release`, from the global `keyup` → `s.keyUp`). States: idle → accumulating (±step per
+  press; the other direction starts a new count from the pending target; one seek after the debounce, which starts
+  on key-up) → scrubbing (held past 500 ms: 10/30/60 s steps per 250 ms tick) → committing (one
+  `video.currentTime` set, waits for `seeked`, keeps play/pause; input meanwhile is queued) → idle. Buffering after
+  a seek shows the light spinner (`busy(true, '', true)`) and keeps the indicator until `playing`.
+  Quality reads the master playlist's `#EXT-X-STREAM-INF` variants (`loadVariants`) and plays the chosen variant's
+  URL; a failing choice falls back to Auto, then to the MP4. The player sets `keysWhileBusy` so the remote works
+  while it buffers.
   Subtitles are fetched and drawn by the app (`parseSubs`, SRT or VTT), with a `<track>` if fetching fails.
 - **Storage (localStorage):** `creds`, `positions` (`m<id>` / `e<id>` → `{t, d, at}`), `history`, `sort`,
   `sublang`, `quality`.

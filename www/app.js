@@ -51,8 +51,10 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { el.hidden = true; }, 5000);
   }
-  function busy(on, text) {
+  // light: just a spinner over the picture (buffering), without dimming it.
+  function busy(on, text, light) {
     document.getElementById('busy').hidden = !on;
+    document.getElementById('busy').classList.toggle('light', !!light);
     $(document, '.busy-text').textContent = text || '';
   }
   function exitApp() {
@@ -588,38 +590,74 @@
     push(playerScreen(media, at));
   }
 
+  // Player settings.
+  var PLAYER = {
+    step: 10,                 // seconds per ◀ ▶ press (and the ±10s buttons)
+    debounceMs: 450,          // quiet time after the last press before the one real seek
+    indicatorMs: 700,         // the side skip indicator stays this long after the seek is done, then fades
+    controlsKeys: ['down'],   // keys that open the control bar from the picture (add 'up' to use both)
+    controlsIdleMs: 6000      // the open bar closes after this long without a key, while playing
+  };
+
   function playerScreen(media, startAt) {
     var s = { el: h('div', 'screen player'), keysWhileBusy: true };
     s.el.innerHTML =
       '<video preload="auto"></video><div class="subs"></div><div class="paused-icon" hidden>❚❚</div>' +
-      '<div class="skip" hidden><div class="skip-big"></div><div class="skip-small"></div></div>' +
+      '<div class="skipper left"><div class="ripple"></div><div class="skip-text"><b></b><span></span></div></div>' +
+      '<div class="skipper right"><div class="ripple"></div><div class="skip-text"><b></b><span></span></div></div>' +
       '<div class="osd"><div class="ttl"></div><div class="sub"></div><div class="track"><i></i><b hidden></b></div>' +
       '<div class="row"><span class="time"></span><span class="hint"></span></div><div class="osd-actions"></div></div>' +
       '<div class="menu" hidden><div class="menu-title"></div><div class="menu-list"></div><div class="menu-note"></div></div>';
-    var video = $(s.el, 'video'), subsEl = $(s.el, '.subs'), pausedIcon = $(s.el, '.paused-icon'), skipEl = $(s.el, '.skip');
+    var video = $(s.el, 'video'), subsEl = $(s.el, '.subs'), pausedIcon = $(s.el, '.paused-icon');
+    var skipL = $(s.el, '.skipper.left'), skipR = $(s.el, '.skipper.right'), track = $(s.el, '.track');
     var bar = $(s.el, '.track i'), head = $(s.el, '.track b'), timeEl = $(s.el, '.time'), hintEl = $(s.el, '.hint'), actionsEl = $(s.el, '.osd-actions');
     var menu = $(s.el, '.menu'), menuList = $(s.el, '.menu-list'), menuNote = $(s.el, '.menu-note');
     var master = '', mp4 = '', currentUrl = '', variants = [], quality = 0, resume = 0;
     var subsList = [], subIdx = -1, cues = [], shownText = '', sentKeys = '', subError = '', qualityNote = '';
-    var btnFocus = -1, menuState = null, closed = false;
-    var osdTimer, saveTimer, subTimer, skipHideTimer;
+    var menuState = null, closed = false;
+    var osdTimer, saveTimer, subTimer, skipHideTimer, shownDelta = null;
 
-    // Seeking (www/seek.js): ◀ ▶ ±10 s, quick presses add up, holding scrubs faster; one real seek at the end.
-    var seeker = SeekController(SeekController.videoAdapter(video));
+    // Focus: 'video' = the bar is hidden and the picture itself has focus (◀ ▶ skip, OK pauses);
+    // 'controls' = the bar is open and focus is inside it: ctrlFocus -1 is the progress bar, 0… the buttons.
+    var mode = 'video', ctrlFocus = -1;
+
+    // Seeking (www/seek.js): taps add up into one seek, holding scrubs faster, one real seek at the end.
+    var seeker = SeekController(SeekController.videoAdapter(video), { step: PLAYER.step, debounceMs: PLAYER.debounceMs });
     seeker.onChange(function (snap) {
+      if (mode === 'controls') { renderOsd(); touchControls(); }   // the open bar shows the target on its progress bar
+      showSkip(snap);
+    });
+
+    // The skip indicator on the side that was pressed: "−30s" on the left, "+30s" on the right, with a ripple.
+    function showSkip(snap) {
       clearTimeout(skipHideTimer);
       if (snap.target == null) {
-        skipHideTimer = setTimeout(function () { skipEl.hidden = true; }, 600);
-        osd(true);                                   // restarts the auto-hide now the seek is done
+        // Done: stay a moment, then fade (unless the TV is still buffering, then wait for 'playing').
+        if (busyNow()) return;
+        skipHideTimer = setTimeout(hideSkip, PLAYER.indicatorMs);
         return;
       }
-      var d = snap.delta, abs = Math.abs(d);
-      $(skipEl, '.skip-big').textContent = (d < 0 ? '◀◀  −' : '▶▶  +') + (abs < 60 ? Math.round(abs) + ' s' : clock(abs));
-      $(skipEl, '.skip-small').textContent = snap.state === 'scrubbing' ? clock(snap.target) + '   ·   ' + snap.scrubStep + ' s steps'
-        : snap.state === 'committing' ? 'Going to ' + clock(snap.target) + '…' : clock(snap.target);
-      skipEl.hidden = false;
-      osd(true);
-    });
+      if (mode === 'controls') { hideSkip(); return; }
+      var side = snap.direction < 0 ? skipL : skipR, other = side === skipL ? skipR : skipL;
+      var abs = Math.abs(snap.delta), label = (snap.delta < 0 ? '−' : '+') + (abs < 60 ? Math.round(abs) + 's' : clock(abs));
+      other.classList.remove('on');
+      $(side, 'b').textContent = side === skipL ? '«  ' + label : label + '  »';
+      $(side, 'span').textContent = snap.state === 'scrubbing' ? clock(snap.target) + '  ·  ' + snap.scrubStep + 's steps' : clock(snap.target);
+      side.classList.add('on');
+      if (snap.delta !== shownDelta) {
+        // Restart the ripple on every new step.
+        side.classList.remove('pulse');
+        void side.offsetWidth;
+        side.classList.add('pulse');
+        shownDelta = snap.delta;
+      }
+    }
+    function hideSkip() {
+      skipL.classList.remove('on');
+      skipR.classList.remove('on');
+      shownDelta = null;
+    }
+    function busyNow() { return !document.getElementById('busy').hidden; }
 
     // The row of buttons under the progress bar (▼ to reach it).
     var buttons = [
@@ -635,24 +673,38 @@
     function save() {
       if (video.currentTime > 0 && isFinite(video.duration)) savePos(key(), media.id, video.currentTime, video.duration);
     }
-    function osd(on) {
-      clearTimeout(osdTimer);
-      s.el.classList.toggle('osd-on', on);
-      if (on && !video.paused && btnFocus < 0 && menu.hidden && !seeker.busy()) osdTimer = setTimeout(function () { s.el.classList.remove('osd-on'); }, 4000);
+    function openControls() {
+      mode = 'controls';
+      ctrlFocus = -1;
+      hideSkip();
+      s.el.classList.add('osd-on');
       renderOsd();
+      touchControls();
+    }
+    function closeControls() {
+      mode = 'video';
+      clearTimeout(osdTimer);
+      s.el.classList.remove('osd-on');
+    }
+    // Any key in the bar keeps it open; while playing it closes by itself after a while.
+    function touchControls() {
+      clearTimeout(osdTimer);
+      if (mode === 'controls' && !video.paused && !menuState && !seeker.busy()) osdTimer = setTimeout(closeControls, PLAYER.controlsIdleMs);
     }
     function renderOsd() {
+      if (mode !== 'controls') return;
       var target = seeker.snapshot().target, t = target != null ? target : video.currentTime, d = video.duration;
       var pct = function (x) { return (isFinite(d) && d ? Math.min(100, Math.max(0, x / d * 100)) : 0).toFixed(2) + '%'; };
       bar.style.width = pct(video.currentTime);
-      head.hidden = target == null;
-      if (target != null) head.style.left = pct(target);
+      head.hidden = target == null && ctrlFocus !== -1;
+      head.style.left = pct(t);
+      track.classList.toggle('focus', ctrlFocus === -1);
       timeEl.textContent = clock(t) + (isFinite(d) ? '  /  ' + clock(d) : '');
-      hintEl.textContent = btnFocus >= 0 ? '◀ ▶ choose    OK select    ▲ hide'
-        : '◀ ▶ 10 s, hold to scrub    ▼ subtitles, quality    OK pause';
+      hintEl.textContent = ctrlFocus === -1 ? '◀ ▶ seek    ▼ buttons    Back close'
+        : '◀ ▶ choose    OK select    ▲ progress bar    Back close';
       buttons.forEach(function (b, i) {
         b.el.textContent = b.label();
-        b.el.classList.toggle('focus', i === btnFocus);
+        b.el.classList.toggle('focus', i === ctrlFocus);
       });
     }
 
@@ -662,12 +714,12 @@
       m.idx = m.current;
       menu.hidden = false;
       renderMenu();
-      osd(true);
+      touchControls();
     }
     function closeMenu() {
       menu.hidden = true;
       menuState = null;
-      osd(true);
+      touchControls();
     }
     function renderMenu() {
       var m = menuState;
@@ -858,7 +910,6 @@
 
     function begin(at) {
       busy(true, media.sub || media.title);
-      osd(true);
       $(s.el, '.ttl').textContent = media.title;
       $(s.el, '.sub').textContent = media.sub || '';
       api((media.kind === 'movie' ? '/movies/' : '/episodes/') + media.id).then(function (d) {
@@ -889,16 +940,20 @@
       busy(false);
       pausedIcon.hidden = true;
       screensaver(false);
-      osd(s.el.classList.contains('osd-on'));
+      if (!seeker.busy()) { clearTimeout(skipHideTimer); skipHideTimer = setTimeout(hideSkip, PLAYER.indicatorMs); }
+      renderOsd();
+      touchControls();
     });
     video.addEventListener('pause', function () {
       pausedIcon.hidden = false;
       screensaver(true);
       save();
-      osd(true);
+      renderOsd();
+      touchControls();
     });
-    video.addEventListener('waiting', function () { if (!video.paused) busy(true); });
-    video.addEventListener('timeupdate', function () { if (s.el.classList.contains('osd-on')) renderOsd(); });
+    // Buffering (often right after a seek): a light spinner over the picture; the skip indicator stays.
+    video.addEventListener('waiting', function () { if (!video.paused) busy(true, '', true); });
+    video.addEventListener('timeupdate', renderOsd);
     video.addEventListener('error', function () {
       if (closed || !currentUrl) return;
       var at = video.currentTime || resume;
@@ -937,11 +992,13 @@
     }
 
     s.key = function (k) {
+      // Media keys work the same everywhere.
       if (k === 'play') { if (video.paused) toggle(); return true; }
       if (k === 'pause') { if (!video.paused) toggle(); return true; }
       if (k === 'playpause') { toggle(); return true; }
       if (k === 'rw' || k === 'ff') { seeker.press(k === 'ff' ? 1 : -1); return true; }
       if (k === 'stop') { pop(); return true; }
+
       if (menuState) {
         if (k === 'up') menuState.idx = Math.max(0, menuState.idx - 1);
         else if (k === 'down') menuState.idx = Math.min(menuState.items.length - 1, menuState.idx + 1);
@@ -951,21 +1008,30 @@
         renderMenu();
         return true;
       }
-      if (btnFocus >= 0) {
-        if (k === 'left') btnFocus = Math.max(0, btnFocus - 1);
-        else if (k === 'right') btnFocus = Math.min(buttons.length - 1, btnFocus + 1);
-        else if (k === 'enter') buttons[btnFocus].act();
-        else if (k === 'up' || k === 'back') { btnFocus = -1; osd(k === 'up'); return true; }
-        osd(true);
+
+      if (mode === 'controls') {
+        touchControls();
+        if (k === 'back') { closeControls(); return true; }
+        if (ctrlFocus === -1) {                     // the progress bar
+          if (k === 'left' || k === 'right') seeker.press(k === 'right' ? 1 : -1);
+          else if (k === 'down') ctrlFocus = 1;     // Play/Pause
+          else if (k === 'enter') toggle();
+        } else {                                    // the buttons
+          if (k === 'left') ctrlFocus = Math.max(0, ctrlFocus - 1);
+          else if (k === 'right') ctrlFocus = Math.min(buttons.length - 1, ctrlFocus + 1);
+          else if (k === 'up') ctrlFocus = -1;
+          else if (k === 'enter') buttons[ctrlFocus].act();
+        }
+        renderOsd();
         return true;
       }
-      if (k === 'left') seeker.press(-1);
-      else if (k === 'right') seeker.press(1);
-      else if (k === 'enter') toggle();
-      else if (k === 'down') { btnFocus = 1; osd(true); }
-      else if (k === 'up') osd(true);
-      else return false;
-      return true;
+
+      // mode 'video': the picture has focus and the bar stays hidden.
+      if (k === 'left' || k === 'right') { seeker.press(k === 'right' ? 1 : -1); return true; }
+      if (k === 'enter') { toggle(); return true; }
+      if (PLAYER.controlsKeys.indexOf(k) >= 0) { openControls(); return true; }
+      if (k === 'up' || k === 'down') return true;
+      return false;                                 // Back leaves the player
     };
     // Key releases end a hold (scrub) or start the short wait that adds quick presses up.
     s.keyUp = function (k) {

@@ -1,7 +1,7 @@
 /*
  * Netflix-style seeking for a TV remote, with no UI and no <video> in it, so it can be tested on its own.
  *
- *   idle ──press──▶ accumulating ──(more presses add ±STEP, debounce restarts)──┐
+ *   idle ──press──▶ accumulating ──(same-direction presses add ±STEP; the other direction starts a new count)──┐
  *     ▲                 │ key still down after HOLD_DELAY                        │ debounce ends
  *     │                 ▼                                                        ▼
  *     │             scrubbing ──(every TICK: ±10 s, then ±30 s, then ±60 s)──▶ committing ──seek done──▶ idle
@@ -40,6 +40,7 @@
     var target = null;         // where we'll land, seconds
     var origin = null;         // where the run of presses started, for the "+30" label
     var held = 0;              // direction of the key that's down: -1, 1 or 0
+    var lastDir = 0;           // direction of the latest press, for the side the indicator shows on
     var downAt = 0, lastRepeatAt = 0, scrubStart = 0;
     var debounceId = null, tickId = null, holdId = null;
     var again = false;         // input arrived while a seek was running: commit again when it's done
@@ -54,7 +55,7 @@
         state: state,
         target: target,
         delta: target == null || origin == null ? 0 : target - origin,
-        direction: held,
+        direction: lastDir,
         scrubStep: state === 'scrubbing' ? stepFor(o.now() - scrubStart) : o.step
       };
     }
@@ -116,6 +117,8 @@
       if (held === dir) { lastRepeatAt = t; return; }   // an auto-repeat of the key that's down
       // A new press (or the other direction while one was held). Nothing commits while a key is down.
       stopTimers();
+      if (lastDir && dir !== lastDir && target != null) origin = target;   // switching direction: a new count from here
+      lastDir = dir;
       held = dir;
       downAt = lastRepeatAt = t;
       move(dir * o.step);
@@ -156,6 +159,7 @@
         }
         state = 'idle';
         target = origin = null;
+        lastDir = 0;
         emit();
       });
     }
@@ -165,7 +169,7 @@
       stopTimers();
       state = 'idle';
       target = origin = null;
-      held = 0;
+      held = lastDir = 0;
       again = false;
       emit();
     }

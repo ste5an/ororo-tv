@@ -62,13 +62,33 @@ test('quick presses add up into a single seek', async () => {
   assert.deepEqual(player.seeks, [570]);
 });
 
-test('the other direction cancels out', async () => {
+test('switching direction starts a new count from where it was heading', async () => {
   const { seek, player, advance } = setup();
   seek.press(1); seek.release(1);
   seek.press(1); seek.release(1);
+  assert.equal(seek.snapshot().delta, 20);
   seek.press(-1); seek.release(-1);
+  assert.equal(seek.snapshot().delta, -10, 'the indicator restarts at −10');
+  assert.equal(seek.snapshot().direction, -1);
   await advance(500);
-  assert.deepEqual(player.seeks, [610]);
+  assert.deepEqual(player.seeks, [610], 'still one seek, to +20 −10');
+});
+
+test('the count resets once the seek is done', async () => {
+  const { seek, advance } = setup();
+  seek.press(1); seek.release(1);
+  await advance(500);
+  seek.press(1); seek.release(1);
+  assert.equal(seek.snapshot().delta, 10);
+  assert.equal(seek.snapshot().target, 620);
+});
+
+test('end of media: presses past the end stop just before it', async () => {
+  const { seek, player, advance } = setup({ pos: 3570 });
+  for (let i = 0; i < 5; i++) { seek.press(1); seek.release(1); }
+  assert.equal(seek.snapshot().target, 3598);
+  await advance(500);
+  assert.deepEqual(player.seeks, [3598]);
 });
 
 test('clamps at the start and before the end', async () => {

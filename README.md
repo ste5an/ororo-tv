@@ -12,15 +12,14 @@ every language Ororo has for the video.
 
 - **Movies, Shows, Search and Continue** tabs, sorted by Popular, New, Top rated or A–Z.
 - **Show pages** with seasons and episodes. Watched episodes get a ✓, and the next one to watch is already selected.
-- **A player made for the remote:**
-  - ◀ ▶ skip back or forward **10 seconds**. Quick presses add up (three presses = 30 s) into one jump.
-  - **Hold** ◀ or ▶ to scrub, faster the longer you hold (10 s, then 30 s, then 60 s steps). A marker on the
-    progress bar shows where you'll land; let go to jump there. The remote's ⏪ ⏩ buttons do the same. OK pauses.
-  - ▼ shows the buttons: **−10s, Play/Pause, +10s, Subtitles, Quality**. ◀ ▶ choose, OK opens, ▲ hides them.
-  - **Subtitles**: Off plus every language Ororo has for the video.
-  - **Quality**: Auto (the TV adapts to your internet), each resolution in the stream (1080p, 720p…), or the MP4
-    file. Your choice is remembered.
-  - Back leaves and saves your place. The remote's play, pause, rewind and fast-forward buttons work too.
+- **A player made for the remote**, Netflix-style:
+  - While the video plays, nothing is on screen and the picture has focus. **◀ ▶ skip 10 seconds** right there:
+    a small "« −10s" / "+10s »" appears on that side with a ripple, and quick presses add up ("+30s") into one jump.
+    Switching direction starts a new count. **Hold** ◀ or ▶ to scrub faster (10, 30, then 60 s steps); let go to
+    land. **OK** pauses. The remote's ⏪ ⏩ buttons work the same.
+  - **▼ opens the control bar**, with focus on the progress bar (◀ ▶ seek there). ▼ again reaches the buttons:
+    −10s, Play/Pause, +10s, **Subtitles** (Off plus every language Ororo has) and **Quality** (Auto, each
+    resolution in the stream, or the MP4; remembered). **Back** closes the bar; Back again leaves the video.
 - **Plays the next episode** by itself when one ends.
 - **Big, readable subtitles** drawn by the app, with the TV's own subtitles as a fallback.
 
