@@ -106,7 +106,7 @@ Updates must be signed with the same certificate as the installed copy. Otherwis
 | [`config.xml`](config.xml) | The Tizen app manifest |
 | [`build.py`](build.py) | Build, sign and install |
 | [`phone/`](phone) | The iPhone web app, published to GitHub Pages by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) with `www/seek.js` and the icon |
-| [`tools/make_icon.py`](tools/make_icon.py) | Draws the icon without any libraries |
+| [`tools/make_icon.py`](tools/make_icon.py) | Draws the icons without any libraries: `www/icon.png` (TV, rounded) and `phone/apple-touch-icon.png` (iPhone, square) |
 
 ## License
 
