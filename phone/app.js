@@ -390,12 +390,11 @@
   function createPlayer(stage, ui, media, startAt) {
     stage.classList.add('playing');
     stage.style.backgroundImage = '';
-    stage.innerHTML = '<video playsinline controls autopictureinpicture preload="auto"></video>' +
+    stage.innerHTML = '<video playsinline controls preload="auto"></video>' +
       '<div class="skip-flash left"></div><div class="skip-flash right"></div>';
     ui.hidden = false;
     ui.innerHTML = '<div class="controls"><button data-skip="-1">« 10s</button><button data-skip="1">10s »</button>' +
-      '<select class="subs"></select><select class="quality"></select><button class="pip" hidden>Picture in Picture</button></div>' +
-      '<p class="note"></p>';
+      '<select class="subs"></select><select class="quality"></select></div><p class="note"></p>';
     var video = $(stage, 'video'), subsSel = $(ui, '.subs'), qualSel = $(ui, '.quality'), note = $(ui, '.note');
     var master = '', mp4 = '', variants = [], quality = 0, resume = startAt || 0, currentUrl = '', closed = false;
     var subs = [], saveTimer, flashTimer;
@@ -417,32 +416,7 @@
       b.onclick = function () { var d = +b.dataset.skip; seeker.press(d); seeker.release(d); };
     });
 
-    // Picture in Picture: the video keeps playing in a small window while you use other apps.
-    // Swiping home during full-screen playback does it by itself (autopictureinpicture).
-    var pipBtn = $(ui, '.pip');
-    var webkitPip = video.webkitSupportsPresentationMode && video.webkitSupportsPresentationMode('picture-in-picture');
-    pipBtn.hidden = !(webkitPip || document.pictureInPictureEnabled);
-    function inPip() {
-      return webkitPip ? video.webkitPresentationMode === 'picture-in-picture' : document.pictureInPictureElement === video;
-    }
-    pipBtn.onclick = function () {
-      // iOS allows Picture in Picture only in Safari itself, not in a home-screen icon added as a full-screen app.
-      if (navigator.standalone) {
-        toast('iPhone only allows Picture in Picture in Safari. Delete this home-screen icon, open ste5an.github.io/ororo-tv in Safari and add it again.');
-        return;
-      }
-      try {
-        if (webkitPip) video.webkitSetPresentationMode(inPip() ? 'inline' : 'picture-in-picture');
-        else if (inPip()) document.exitPictureInPicture();
-        else video.requestPictureInPicture().catch(function (e) { toast('Picture in Picture didn’t start: ' + e.message); });
-      } catch (e) { toast('Picture in Picture didn’t start: ' + e.message); }
-    };
-    function pipLabel() { pipBtn.textContent = inPip() ? 'Back to the page' : 'Picture in Picture'; }
-    video.addEventListener('webkitpresentationmodechanged', pipLabel);
-    video.addEventListener('enterpictureinpicture', pipLabel);
-    video.addEventListener('leavepictureinpicture', pipLabel);
-
-    // The small window, the lock screen and Control Center show the title and ±10 s buttons.
+    // The lock screen and Control Center show the title, with ±10 s and next-episode buttons.
     function mediaSession() {
       if (!('mediaSession' in navigator)) return;
       var ms = navigator.mediaSession, art = (byId.movie[media.id] || byId.show[media.showId] || {}).poster;
