@@ -78,7 +78,7 @@ don't share that build.
 python3 build.py                                # OroroTV.wgt, not signed
 python3 build.py --sign PROFILE                 # signed with a Tizen security profile
 python3 build.py --sign PROFILE --install TV_IP # signed, installed and opened on the TV
-python3 tools/make_icon.py                      # redraws www/icon.png
+python3 tools/make_icon.py                      # redraws the TV and iPhone icons
 ```
 
 Updates must be signed with the same certificate as the installed copy. Otherwise, uninstall it first:
