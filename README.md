@@ -30,7 +30,9 @@ its icon: it runs full screen like an app. Sign in with your ororo.tv email and 
 
 Movies, shows, search and Continue; the video plays at the top of the page with the iPhone's own controls (full
 screen, AirPlay, picture-in-picture), with « 10s / 10s » buttons (quick taps add up), a subtitles picker (they show
-in full screen too) and a quality picker. Your place is saved on the phone; the TV keeps its own.
+in full screen too) and a quality picker. **Picture in Picture** keeps the video playing in a small window while you
+use other apps (the button under the video, or swipe home while it plays full screen); the small window and the lock
+screen have ±10 s and next-episode buttons. Your place is saved on the phone; the TV keeps its own.
 
 ## Install on the TV
 

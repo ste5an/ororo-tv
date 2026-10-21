@@ -352,7 +352,8 @@
       var ep = episodes[i];
       playingId = ep.id;
       start({
-        kind: 'episode', id: ep.id, title: item.name, label: epLabel(ep),
+        kind: 'episode', id: ep.id, title: item.name, label: epLabel(ep), showId: item.id,
+        next: episodes[i + 1] ? function () { playEpisode(i + 1); } : null,
         onEnded: function () {
           if (episodes[i + 1]) { toast('Next: ' + epLabel(episodes[i + 1])); playEpisode(i + 1); }
           renderSeasons(current);
@@ -389,11 +390,12 @@
   function createPlayer(stage, ui, media, startAt) {
     stage.classList.add('playing');
     stage.style.backgroundImage = '';
-    stage.innerHTML = '<video playsinline controls preload="auto"></video>' +
+    stage.innerHTML = '<video playsinline controls autopictureinpicture preload="auto"></video>' +
       '<div class="skip-flash left"></div><div class="skip-flash right"></div>';
     ui.hidden = false;
     ui.innerHTML = '<div class="controls"><button data-skip="-1">« 10s</button><button data-skip="1">10s »</button>' +
-      '<select class="subs"></select><select class="quality"></select></div><p class="note"></p>';
+      '<select class="subs"></select><select class="quality"></select><button class="pip" hidden>Picture in Picture</button></div>' +
+      '<p class="note"></p>';
     var video = $(stage, 'video'), subsSel = $(ui, '.subs'), qualSel = $(ui, '.quality'), note = $(ui, '.note');
     var master = '', mp4 = '', variants = [], quality = 0, resume = startAt || 0, currentUrl = '', closed = false;
     var subs = [], saveTimer, flashTimer;
@@ -414,6 +416,39 @@
     Array.prototype.forEach.call(ui.querySelectorAll('[data-skip]'), function (b) {
       b.onclick = function () { var d = +b.dataset.skip; seeker.press(d); seeker.release(d); };
     });
+
+    // Picture in Picture: the video keeps playing in a small window while you use other apps.
+    // Swiping home during full-screen playback does it by itself (autopictureinpicture).
+    var pipBtn = $(ui, '.pip');
+    var webkitPip = video.webkitSupportsPresentationMode && video.webkitSupportsPresentationMode('picture-in-picture');
+    pipBtn.hidden = !(webkitPip || document.pictureInPictureEnabled);
+    function inPip() {
+      return webkitPip ? video.webkitPresentationMode === 'picture-in-picture' : document.pictureInPictureElement === video;
+    }
+    pipBtn.onclick = function () {
+      try {
+        if (webkitPip) video.webkitSetPresentationMode(inPip() ? 'inline' : 'picture-in-picture');
+        else if (inPip()) document.exitPictureInPicture();
+        else video.requestPictureInPicture().catch(function (e) { toast('Picture in Picture didn’t start: ' + e.message); });
+      } catch (e) { toast('Picture in Picture didn’t start: ' + e.message); }
+    };
+    function pipLabel() { pipBtn.textContent = inPip() ? 'Back to the page' : 'Picture in Picture'; }
+    video.addEventListener('webkitpresentationmodechanged', pipLabel);
+    video.addEventListener('enterpictureinpicture', pipLabel);
+    video.addEventListener('leavepictureinpicture', pipLabel);
+
+    // The small window, the lock screen and Control Center show the title and ±10 s buttons.
+    function mediaSession() {
+      if (!('mediaSession' in navigator)) return;
+      var ms = navigator.mediaSession, art = (byId.movie[media.id] || byId.show[media.showId] || {}).poster;
+      try {
+        ms.metadata = new MediaMetadata({ title: media.label || media.title, artist: media.label ? media.title : 'Ororo', artwork: art ? [{ src: art }] : [] });
+        ms.setActionHandler('seekbackward', function () { seeker.press(-1); seeker.release(-1); });
+        ms.setActionHandler('seekforward', function () { seeker.press(1); seeker.release(1); });
+        ms.setActionHandler('nexttrack', media.next || null);
+      } catch (e) { /* older iOS: some actions aren't supported */ }
+    }
+    video.addEventListener('play', mediaSession);
 
     // Subtitles: fetched, turned into WebVTT and added as <track>s, so the iPhone's full-screen player shows them too.
     function toVtt(text) {
