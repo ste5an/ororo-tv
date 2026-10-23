@@ -396,9 +396,8 @@
     stage.innerHTML = '<video playsinline controls preload="auto"></video>' +
       '<div class="skip-flash left"></div><div class="skip-flash right"></div>';
     ui.hidden = false;
-    ui.innerHTML = '<div class="controls"><button data-skip="-1">« 10s</button><button data-skip="1">10s »</button>' +
-      '<select class="subs"></select><select class="quality"></select>' +
-      '<button class="dl" disabled>⬇  Download</button></div><p class="note"></p>';
+    ui.innerHTML = '<div class="controls"><select class="subs"></select><select class="quality"></select>' +
+      '<button class="dl" disabled>Download</button></div><p class="note"></p>';
     var video = $(stage, 'video'), subsSel = $(ui, '.subs'), qualSel = $(ui, '.quality'), note = $(ui, '.note');
     var dlBtn = $(ui, '.dl');
     var master = '', mp4 = '', variants = [], quality = 0, resume = startAt || 0, currentUrl = '', closed = false;
@@ -416,9 +415,6 @@
       side.textContent = (snap.delta < 0 ? '« −' : '+') + Math.abs(Math.round(snap.delta)) + 's' + (snap.delta < 0 ? '' : ' »');
       other.classList.remove('on');
       side.classList.add('on');
-    });
-    Array.prototype.forEach.call(ui.querySelectorAll('[data-skip]'), function (b) {
-      b.onclick = function () { var d = +b.dataset.skip; seeker.press(d); seeker.release(d); };
     });
 
     // Download: opens Ororo's own MP4 link in Safari, which offers to save it (Share → Save to Files). The file then
