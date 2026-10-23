@@ -95,16 +95,51 @@
       pop: +r.user_popularity || 0, fresh: Date.parse(r.newest_video || r.updated_at || '') || 0
     };
   }
+  function applyCatalog(data) {
+    catalog.movie = data.movie;
+    catalog.show = data.show;
+    ['movie', 'show'].forEach(function (k) {
+      byId[k] = {};
+      catalog[k].forEach(function (it) { byId[k][it.id] = it; });
+    });
+    loaded = true;
+  }
   function loadCatalog() {
     return Promise.all([api('/movies'), api('/shows')]).then(function (res) {
-      catalog.movie = (res[0].movies || []).map(function (r) { return slim('movie', r); });
-      catalog.show = (res[1].shows || []).map(function (r) { return slim('show', r); });
-      ['movie', 'show'].forEach(function (k) {
-        byId[k] = {};
-        catalog[k].forEach(function (it) { byId[k][it.id] = it; });
-      });
-      loaded = true;
+      var data = {
+        movie: (res[0].movies || []).map(function (r) { return slim('movie', r); }),
+        show: (res[1].shows || []).map(function (r) { return slim('show', r); })
+      };
+      applyCatalog(data);
+      cachePut(data);
     });
+  }
+
+  // The lists are saved on the phone (IndexedDB) so the app opens at once and refreshes them in the background.
+  // Every call is best-effort: with no IndexedDB the app simply loads from Ororo each time, as before.
+  function cacheDb() {
+    return new Promise(function (resolve, reject) {
+      if (!window.indexedDB) { reject(new Error('no IndexedDB')); return; }
+      var r = indexedDB.open('ororo', 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore('kv'); };
+      r.onsuccess = function () { resolve(r.result); };
+      r.onerror = function () { reject(r.error); };
+    });
+  }
+  function cacheGet() {
+    return cacheDb().then(function (db) {
+      return new Promise(function (resolve) {
+        var q = db.transaction('kv').objectStore('kv').get('catalog');
+        q.onsuccess = function () { resolve(q.result || null); };
+        q.onerror = function () { resolve(null); };
+      });
+    }).catch(function () { return null; });
+  }
+  function cachePut(data) {
+    cacheDb().then(function (db) { db.transaction('kv', 'readwrite').objectStore('kv').put(data, 'catalog'); }).catch(function () {});
+  }
+  function cacheClear() {
+    cacheDb().then(function (db) { db.transaction('kv', 'readwrite').objectStore('kv').delete('catalog'); }).catch(function () {});
   }
 
   var positions = load('positions', {});
@@ -127,6 +162,60 @@
     return load('history', []).map(function (x) { return byId[x.kind][x.id]; }).filter(Boolean);
   }
 
+  // Watched / unwatched by hand. "Watched" is a finished position (see finished()); "unwatched" removes the position.
+  function isWatched(kind, id) { return finished(posOf(kind, id)); }
+  function setWatched(kind, id, on) {
+    var key = posKey(kind, id), p = positions[key], d = p && p.d ? p.d : 1;
+    if (on) positions[key] = { t: d, d: d, at: Date.now() };
+    else delete positions[key];
+    store('positions', positions);
+  }
+
+  var DOWNLOAD_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>';
+  var CHECK_SVG = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/></svg>';
+
+  // A round check button: filled when watched. Tapping flips it.
+  function watchToggle(kind, id, onChange) {
+    var b = h('button', 'iconbtn');
+    function paint() {
+      var on = isWatched(kind, id);
+      b.className = 'iconbtn' + (on ? ' on' : '');
+      b.setAttribute('aria-label', on ? 'Mark as unwatched' : 'Mark as watched');
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.innerHTML = CHECK_SVG;
+    }
+    b.onclick = function () { setWatched(kind, id, !isWatched(kind, id)); paint(); if (onChange) onChange(); };
+    paint();
+    return b;
+  }
+
+  // Download without playing. Tap 1 asks Ororo for the MP4 link; it then turns into a real link, because Safari only
+  // opens a link after a direct tap, not after waiting for the network. Tap 2 opens it and Safari offers to save it.
+  function downloadAction(kind, id, cls, icon) {
+    var b = h('button', cls);
+    b.setAttribute('aria-label', 'Download');
+    function idle() { b.disabled = false; if (icon) b.innerHTML = DOWNLOAD_SVG; else b.textContent = 'Download'; }
+    idle();
+    b.onclick = function () {
+      b.disabled = true;
+      b.textContent = icon ? '…' : 'Preparing…';
+      api((kind === 'movie' ? '/movies/' : '/episodes/') + id).then(function (d) {
+        var url = abs(d.download_url);
+        if (!url) throw new Error('Ororo didn’t give a download link for this one.');
+        var a = h('a', cls + ' ready', icon ? 'Save' : 'Tap to save');
+        a.href = url; a.target = '_blank'; a.rel = 'noopener';
+        a.setAttribute('aria-label', 'Save file');
+        b.parentNode.replaceChild(a, b);
+        toast('Ready: tap “' + a.textContent + '”. If it plays instead of saving, tap Share → Save to Files.');
+      }).catch(function (e) {
+        idle();
+        if (e.status === 401) { forget('creds'); cacheClear(); loaded = false; route(); return; }
+        toast(e.message || 'Couldn’t get the download link.');
+      });
+    };
+    return b;
+  }
+
   // ---------------------------------------------------------------- routing: #/  #/movie/ID  #/show/ID
 
   var app = document.getElementById('app');
@@ -146,13 +235,24 @@
   window.addEventListener('hashchange', route);
 
   function boot() {
+    cacheGet().then(function (saved) {
+      if (!saved || !saved.movie || !saved.show || !creds()) { bootFresh(); return; }
+      applyCatalog(saved);
+      route();
+      // Fresh lists arrive quietly; they show the next time a screen is drawn. Offline or a hiccup: keep the saved ones.
+      loadCatalog().catch(function (e) {
+        if (e.status === 401) { forget('creds'); loaded = false; cacheClear(); renderLogin(e.message); }
+      });
+    });
+  }
+  function bootFresh() {
     app.innerHTML = '<div class="loading"><div class="spinner"></div><div>Loading Ororo…</div></div>';
     loadCatalog().then(route, function (e) {
-      if (e.status === 401) { forget('creds'); renderLogin(e.message); return; }
+      if (e.status === 401) { forget('creds'); cacheClear(); renderLogin(e.message); return; }
       app.innerHTML = '';
       var box = app.appendChild(h('div', 'loading'));
       box.appendChild(h('div', '', e.message || 'Couldn’t load Ororo.'));
-      box.appendChild(h('button', 'btn primary', 'Try again')).onclick = boot;
+      box.appendChild(h('button', 'btn primary', 'Try again')).onclick = bootFresh;
     });
   }
 
@@ -207,7 +307,7 @@
     var tabsEl = $(app, '.tabs'), tools = $(app, '.tools'), grid = $(app, '.grid'), empty = $(app, '.empty');
     var items = [], rendered = 0;
 
-    $(app, '.link').onclick = function () { forget('creds'); loaded = false; route(); };
+    $(app, '.link').onclick = function () { forget('creds'); cacheClear(); loaded = false; route(); };
     [['continue', 'Continue'], ['movie', 'Movies'], ['show', 'Shows'], ['search', 'Search']].forEach(function (t) {
       if (t[0] === 'continue' && !continueItems().length) return;
       var b = tabsEl.appendChild(h('button', 'tab' + (homeState.tab === t[0] ? ' on' : ''), t[1]));
@@ -321,6 +421,11 @@
       var play = actions.appendChild(h('button', 'btn primary', at ? '▶  Resume from ' + clock(at) : '▶  Play'));
       play.onclick = function () { start(media, at); };
       if (at) actions.appendChild(h('button', 'btn', 'From the start')).onclick = function () { start(media, 0); };
+      actions.appendChild(downloadAction('movie', item.id, 'btn', false));
+      actions.appendChild(h('button', 'btn', isWatched('movie', item.id) ? 'Mark as unwatched' : 'Mark as watched')).onclick = function () {
+        setWatched('movie', item.id, !isWatched('movie', item.id));
+        renderDetail(item);
+      };
       return;
     }
 
@@ -331,19 +436,23 @@
       episodes = (d.episodes || []).map(function (ep) {
         return { id: ep.id, season: +ep.season || 1, number: +ep.number || 0, title: ep.title || ep.name || '', plot: ep.plot || ep.desc || '' };
       }).sort(function (a, b) { return a.season - b.season || a.number - b.number; });
-      actions.innerHTML = '';
-      if (!episodes.length) { actions.appendChild(h('div', 'note', 'No episodes yet.')); return; }
-      var next = nextEpisode();
-      var label = posOf('episode', next.id) && !finished(posOf('episode', next.id)) ? 'Resume' : 'Play';
-      actions.appendChild(h('button', 'btn primary', '▶  ' + label + ' S' + next.season + ' E' + next.number)).onclick = function () {
-        playEpisode(episodes.indexOf(next));
-      };
-      renderSeasons(next.season);
+      if (!episodes.length) { actions.innerHTML = ''; actions.appendChild(h('div', 'note', 'No episodes yet.')); return; }
+      paintPlay();
+      renderSeasons(nextEpisode().season);
     }).catch(function (e) {
       actions.innerHTML = '';
       actions.appendChild(h('div', 'note', 'Couldn’t load the episodes: ' + e.message));
     });
 
+    // The big Play / Resume button for the next episode; redrawn when watched marks change.
+    function paintPlay() {
+      actions.innerHTML = '';
+      var next = nextEpisode();
+      var label = posOf('episode', next.id) && !finished(posOf('episode', next.id)) ? 'Resume' : 'Play';
+      actions.appendChild(h('button', 'btn primary', '▶  ' + label + ' S' + next.season + ' E' + next.number)).onclick = function () {
+        playEpisode(episodes.indexOf(next));
+      };
+    }
     function nextEpisode() {
       var lastSeen = -1;
       episodes.forEach(function (ep, i) { if (posOf('episode', ep.id)) lastSeen = i; });
@@ -375,15 +484,23 @@
       });
       episodes.forEach(function (ep, i) {
         if (ep.season !== season) return;
-        var row = epsBox.appendChild(h('button', 'ep' + (ep.id === playingId ? ' current' : '')));
+        var wrap = epsBox.appendChild(h('div', 'eprow'));
+        var row = wrap.appendChild(h('button', 'ep' + (ep.id === playingId ? ' current' : '')));
         row.appendChild(h('div', 'n', ep.number));
         var txt = row.appendChild(h('div', 'txt'));
         txt.appendChild(h('div', 'et', ep.title || 'Episode ' + ep.number));
         if (ep.plot) txt.appendChild(h('div', 'plot', plain(ep.plot)));
-        var state = row.appendChild(h('div', 'state')), p = posOf('episode', ep.id);
-        if (finished(p)) state.textContent = '✓';
-        else if (fraction(p) > 0.02) state.appendChild(h('div', 'mini')).appendChild(h('i')).style.width = (fraction(p) * 100).toFixed(1) + '%';
+        var state = row.appendChild(h('div', 'state'));
+        function paint() {
+          var p = posOf('episode', ep.id);
+          state.innerHTML = '';
+          if (finished(p)) state.textContent = '✓';
+          else if (fraction(p) > 0.02) state.appendChild(h('div', 'mini')).appendChild(h('i')).style.width = (fraction(p) * 100).toFixed(1) + '%';
+        }
+        paint();
         row.onclick = function () { playEpisode(i); };
+        wrap.appendChild(watchToggle('episode', ep.id, function () { paint(); paintPlay(); }));
+        wrap.appendChild(downloadAction('episode', ep.id, 'iconbtn', true));
       });
     }
   }
@@ -590,7 +707,7 @@
       });
     }).catch(function (e) {
       note.textContent = e.message;
-      if (e.status === 401) { forget('creds'); loaded = false; route(); }
+      if (e.status === 401) { forget('creds'); cacheClear(); loaded = false; route(); }
     });
     }
     loadMedia(startAt);
