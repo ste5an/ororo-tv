@@ -94,6 +94,8 @@ button { cursor: pointer; }
 .btn.primary { background: var(--text); color: #111; }
 .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0 4px; }
 .controls > * { flex: 1; min-width: 0; }
+.controls .dl { grid-column: 1 / -1; }
+.controls .dl:disabled { opacity: .45; }
 .controls button, .controls select {
   padding: 11px 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
   font-size: 14px; font-weight: 600; text-align: center; text-align-last: center; -webkit-appearance: none; appearance: none;

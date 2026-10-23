@@ -397,8 +397,10 @@
       '<div class="skip-flash left"></div><div class="skip-flash right"></div>';
     ui.hidden = false;
     ui.innerHTML = '<div class="controls"><button data-skip="-1">« 10s</button><button data-skip="1">10s »</button>' +
-      '<select class="subs"></select><select class="quality"></select></div><p class="note"></p>';
+      '<select class="subs"></select><select class="quality"></select>' +
+      '<button class="dl" disabled>⬇  Download</button></div><p class="note"></p>';
     var video = $(stage, 'video'), subsSel = $(ui, '.subs'), qualSel = $(ui, '.quality'), note = $(ui, '.note');
+    var dlBtn = $(ui, '.dl');
     var master = '', mp4 = '', variants = [], quality = 0, resume = startAt || 0, currentUrl = '', closed = false;
     var subs = [], saveTimer, flashTimer;
 
@@ -418,6 +420,16 @@
     Array.prototype.forEach.call(ui.querySelectorAll('[data-skip]'), function (b) {
       b.onclick = function () { var d = +b.dataset.skip; seeker.press(d); seeker.release(d); };
     });
+
+    // Download: opens Ororo's own MP4 link in Safari, which offers to save it (Share → Save to Files). The file then
+    // plays from the Files app; it isn't stored inside this app.
+    dlBtn.onclick = function () {
+      if (!mp4) return;
+      var a = document.createElement('a');
+      a.href = mp4; a.target = '_blank'; a.rel = 'noopener'; a.download = '';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      toast('If it plays instead of saving, tap Share → Save to Files.');
+    };
 
     // The lock screen and Control Center show the title, with ±10 s and next-episode buttons.
     function mediaSession() {
@@ -560,6 +572,7 @@
       if (closed) return;
       master = d.url ? abs(String(d.url).replace('playlist_fmp4.m3u8', 'playlist.m3u8')) : '';
       mp4 = abs(d.download_url);
+      dlBtn.disabled = !mp4;
       if (!master && !mp4) throw new Error('Ororo didn’t give a video for this one.');
       subs = subtitleList(d.subtitles || d.subs || d.subtitle_files);
       subsSel.innerHTML = '';
@@ -590,6 +603,7 @@
       swap: function (next, at) {
         subs.forEach(function (sub) { if (sub.track) { URL.revokeObjectURL(sub.track.src); video.removeChild(sub.track); } });
         subs = []; variants = []; master = mp4 = currentUrl = '';
+        dlBtn.disabled = true;
         media = next;
         loadMedia(at);
       },
