@@ -32,11 +32,22 @@ const MASTER = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x108
   '#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720\nmid.m3u8\n';
 const CORS = { 'access-control-allow-origin': '*' };
 
+// What the fake Ororo did: which hosts were asked, in order, and any switches a test flips.
+let asked, deadHosts, masterDelayMs;
 async function fakeOroro(page) {
-  await page.route(/\/\/(front\.)?ororo[^/]*\//, (route) => {
+  asked = [];
+  deadHosts = new Set();
+  masterDelayMs = 0;
+  await page.route(/\/\/(front\.)?ororo[^/]*\//, async (route) => {
     const url = route.request().url();
+    const host = new URL(url).hostname;
+    asked.push(host + new URL(url).pathname);
+    if (deadHosts.has(host)) return route.abort();
     const json = (body) => route.fulfill({ status: 200, contentType: 'application/json', headers: CORS, body: JSON.stringify(body) });
-    if (/playlist\.m3u8/.test(url)) return route.fulfill({ status: 200, contentType: 'application/vnd.apple.mpegurl', headers: CORS, body: MASTER });
+    if (/playlist\.m3u8/.test(url)) {
+      if (masterDelayMs) await new Promise((r) => setTimeout(r, masterDelayMs));
+      return route.fulfill({ status: 200, contentType: 'application/vnd.apple.mpegurl', headers: CORS, body: MASTER });
+    }
     if (/\.srt/.test(url)) return route.fulfill({ status: 200, contentType: 'text/plain', headers: CORS, body: '1\n00:00:01,000 --> 00:00:02,000\nHi\n' });
     if (/\/api\/v2\/movies$/.test(url)) return json({ movies: MOVIES });
     if (/\/api\/v2\/shows$/.test(url)) return json({ shows: SHOWS });
@@ -253,4 +264,100 @@ test('light and dark both read well: text stays at least 4.5:1 against its backg
     });
     for (const k of Object.keys(ratios)) assert.ok(ratios[k] >= 4.5, scheme + ' ' + k + ' is ' + ratios[k].toFixed(2));
   }
+});
+
+// ---- speed -----------------------------------------------------------------------------------------------------
+test('a catalogue saved less than three hours ago is used without asking Ororo for the lists again', async () => {
+  await signIn();
+  const listCalls = () => asked.filter((a) => /\/api\/v2\/(movies|shows)$/.test(a)).length;
+  assert.equal(listCalls(), 2, 'the first visit loads movies and shows once each');
+  await page.reload();
+  await page.waitForSelector('.card');
+  assert.equal(listCalls(), 2, 'the second visit asked again');
+});
+
+test('an old saved catalogue is shown at once and refreshed in the background', async () => {
+  await signIn();
+  await page.evaluate(() => new Promise((resolve) => {
+    const open = indexedDB.open('ororo', 1);
+    open.onsuccess = () => {
+      const store = open.result.transaction('kv', 'readwrite').objectStore('kv');
+      const get = store.get('catalog');
+      get.onsuccess = () => { const c = get.result; c.savedAt = Date.now() - 4 * 3600 * 1000; store.put(c, 'catalog').onsuccess = resolve; };
+    };
+  }));
+  const before = asked.length;
+  await page.reload();
+  await page.waitForSelector('.card');
+  await page.waitForFunction(() => true);
+  await page.waitForTimeout(300);
+  assert.ok(asked.slice(before).some((a) => /\/api\/v2\/movies$/.test(a)), 'the old catalogue was not refreshed');
+});
+
+test('a host that failed is remembered, so the next visit goes straight to the one that works', async () => {
+  deadHosts = new Set();
+  await page.goto(base);
+  deadHosts.add('front.ororo.tv');
+  await page.fill('#em', 'someone@example.com');
+  await page.fill('#pw', 'not-a-real-password');
+  await page.click('.login .btn');
+  await page.waitForSelector('.card');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('apihost'))), 'https://front.ororo-mirror.tv');
+  asked.length = 0;
+  await page.reload();
+  await page.waitForSelector('.card');
+  await page.click('.tabbar a[href="#/tab/show"]');
+  await page.click('.card');
+  await page.waitForSelector('.eprow');
+  assert.ok(asked.some((a) => a.startsWith('front.ororo-mirror.tv/')), 'the working host was not used');
+  assert.ok(!asked.some((a) => a.startsWith('front.ororo.tv/')), 'the dead host was tried again');
+});
+
+test('Auto quality starts the video before the list of resolutions has arrived', async () => {
+  await signIn();
+  masterDelayMs = 1500;
+  await page.click('.card');
+  await page.click('.playrow .btn.primary');
+  await page.waitForFunction(() => { const v = document.querySelector('video'); return v && /playlist\.m3u8/.test(v.getAttribute('src') || ''); }, null, { timeout: 1000 });
+  assert.deepEqual(await page.$$eval('select.quality option', (o) => o.map((x) => x.textContent)), ['Auto']);
+  await page.waitForFunction(() => document.querySelectorAll('select.quality option').length === 3);
+  assert.deepEqual(await page.$$eval('select.quality option', (o) => o.map((x) => x.textContent)), ['Auto', '1080p', '720p']);
+});
+
+test('a chosen resolution still waits for the list, so the first thing played is that resolution', async () => {
+  await page.addInitScript(() => {
+    localStorage.setItem('quality', JSON.stringify('720p'));
+    window.__played = [];
+    const set = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src').set;
+    Object.defineProperty(HTMLMediaElement.prototype, 'src', { configurable: true, get() { return this.getAttribute('src') || ''; }, set(v) { window.__played.push(String(v)); set.call(this, v); } });
+  });
+  await signIn();
+  await page.click('.card');
+  await page.click('.playrow .btn.primary');
+  await page.waitForFunction(() => window.__played.length > 0);
+  assert.match(await page.evaluate(() => window.__played[0]), /mid\.m3u8$/);
+});
+
+test('after one visit the app opens with no connection at all', async () => {
+  await signIn();
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.waitForFunction(async () => (await caches.keys()).length > 0 && !!(await (await caches.open((await caches.keys())[0])).match('app.js')));
+  await page.reload();                      // from now on the saved copy answers
+  await page.waitForSelector('.card');
+  await ctx.setOffline(true);
+  await page.reload();
+  await page.waitForSelector('.card');
+  assert.equal(await page.locator('h1').innerText(), 'Movies');
+  await ctx.setOffline(false);
+});
+
+test('pull request previews never use the saved app files', async () => {
+  await page.goto(base);
+  const registered = await page.evaluate(async () => { await navigator.serviceWorker.ready; return true; });
+  assert.ok(registered);
+  const answered = await page.evaluate(async () => {
+    const r = await fetch('/pr-preview/pr-1/app.js');
+    return r.status;
+  });
+  assert.equal(answered, 404, 'a preview path was answered from the saved app instead of the network');
 });

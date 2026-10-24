@@ -7,6 +7,7 @@
   'use strict';
 
   var API_HOSTS = ['https://front.ororo.tv', 'https://front.ororo-mirror.tv', 'https://ororo.tv'];
+  var FRESH_MS = 3 * 3600 * 1000; // a saved catalogue this young is used as it is
   var CHUNK = 60;          // posters added at a time while scrolling
   var STEP = 10;           // seconds per −10 / +10 tap
   var LANGS = {
@@ -48,7 +49,9 @@
 
   // ---------------------------------------------------------------- Ororo's API (as in the TV app)
 
-  var activeHost = null;
+  // The host that answered last time goes first, so a dead one doesn't cost a wait on every launch.
+  var activeHost = load('apihost', null);
+  if (API_HOSTS.indexOf(activeHost) < 0) activeHost = null;
   function creds() { return load('creds', null); }
   function basicAuth() {
     var c = creds() || { user: '', pass: '' };
@@ -67,9 +70,10 @@
     var hosts = activeHost ? [activeHost].concat(API_HOSTS.filter(function (x) { return x !== activeHost; })) : API_HOSTS.slice();
     function attempt(i) {
       if (i >= hosts.length) return Promise.reject(new Error('Can’t reach Ororo. Check your internet connection.'));
-      var ctrl = new AbortController(), timer = setTimeout(function () { ctrl.abort(); }, 40000);
+      var ctrl = new AbortController(), timer = setTimeout(function () { ctrl.abort(); }, i < hosts.length - 1 ? 12000 : 40000);
       return fetch(hosts[i] + '/api/v2' + path, { headers: headers, signal: ctrl.signal }).then(function (res) {
         clearTimeout(timer);
+        if (activeHost !== hosts[i]) store('apihost', hosts[i]);
         activeHost = hosts[i];
         if (!res.ok) throw httpError(res.status);
         return res.json().catch(function () { throw new Error('Ororo sent an answer this app doesn’t understand.'); });
@@ -111,6 +115,7 @@
         show: (res[1].shows || []).map(function (r) { return slim('show', r); })
       };
       applyCatalog(data);
+      data.savedAt = Date.now();
       cachePut(data);
     });
   }
@@ -280,6 +285,7 @@
       if (!saved || !saved.movie || !saved.show || !creds()) { bootFresh(); return; }
       applyCatalog(saved);
       route();
+      if (saved.savedAt && Date.now() - saved.savedAt < FRESH_MS) return;
       // Fresh lists arrive quietly; they show the next time a screen is drawn. Offline or a hiccup: keep the saved ones.
       loadCatalog().catch(function (e) {
         if (e.status === 401) { forget('creds'); loaded = false; cacheClear(); renderLogin(e.message); }
@@ -775,10 +781,12 @@
 
     // Loads the video for `media`. Playing the next episode reuses this <video>, so the iPhone keeps full screen
     // and lets it start without a tap (a brand-new element would be blocked from autoplaying).
+    var loadId = 0;
     function loadMedia(startAt) {
+    var id = ++loadId;
     note.textContent = 'Loading…';
     api((media.kind === 'movie' ? '/movies/' : '/episodes/') + media.id).then(function (d) {
-      if (closed) return;
+      if (closed || id !== loadId) return;
       master = d.url ? abs(String(d.url).replace('playlist_fmp4.m3u8', 'playlist.m3u8')) : '';
       mp4 = abs(d.download_url);
       if (!master && !mp4) throw new Error('Ororo didn’t give a video for this one.');
@@ -792,8 +800,21 @@
       var pref = load('sublang', 'en'), langs = subs.map(function (x) { return x.lang; });
       var first = pref === 'off' ? -1 : langs.indexOf(pref) >= 0 ? langs.indexOf(pref) : langs.indexOf('en');
       if (first >= 0) pickSub(first, true); else { subsSel.value = -1; labels(); }
+      if (load('quality', 'Auto') === 'Auto' || !master) {
+        // Auto plays the master playlist as it is, so don't wait to read its list of resolutions.
+        quality = 0;
+        fillQuality();
+        note.textContent = '';
+        playUrl(qualityOptions()[0].url, startAt);
+        loadVariants().then(function (list) {
+          if (closed || id !== loadId) return;
+          variants = list;
+          fillQuality();
+        });
+        return;
+      }
       return loadVariants().then(function (list) {
-        if (closed) return;
+        if (closed || id !== loadId) return;
         variants = list;
         quality = preferredQuality();
         fillQuality();
@@ -826,6 +847,15 @@
         subs.forEach(function (sub) { if (sub.track) URL.revokeObjectURL(sub.track.src); });
       }
     };
+  }
+
+  // The app's own files are kept on the phone (sw.js), so it opens at once and even with no signal. Pull request
+  // previews don't use it: they live under /pr-preview/ and must always show the branch they were built from.
+  if ('serviceWorker' in navigator && /^https:|^http:\/\/(localhost|127\.0\.0\.1)[:/]/.test(location.href) && location.pathname.indexOf('/pr-preview/') < 0) {
+    navigator.serviceWorker.register('sw.js').catch(function () { /* the app works without it */ });
+    navigator.serviceWorker.addEventListener('message', function (e) {
+      if (e.data && e.data.type === 'updated') toast('A new version is ready. Close and reopen the app to get it.');
+    });
   }
 
   route();

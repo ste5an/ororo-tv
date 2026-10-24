@@ -15,6 +15,15 @@ the iPhone's own `<video controls playsinline>`; subtitles are fetched, converte
 publishes it to https://ste5an.github.io/ororo-tv/ (`.github/workflows/pages.yml` copies `www/seek.js` and
 `www/icon.png` next to it). To try it locally, copy those two files into a copy of `phone/` and open `index.html`.
 
+**Speed.** `phone/sw.js` keeps the app's own files on the phone (stale-while-revalidate, checked against the server
+with the ETag), so the app opens at once and offline; when a file changed it tells the page, which shows "A new version
+is ready" and the new version runs on the next launch. It ignores `/pr-preview/` (previews always show their own
+branch and never register it). The catalogue is saved in IndexedDB with `savedAt` and reused for `FRESH_MS` (3 hours)
+before it is downloaded again. The Ororo host that answered last is saved as `apihost` and tried first; a host that
+doesn't answer in 12 s is skipped (the last one gets 40 s). Auto quality plays the master playlist at once and fills the
+resolutions list afterwards; a chosen resolution still waits for the list. When you change files the app serves,
+nothing needs bumping in `sw.js`: the ETag check notices.
+
 **Testing a change before it reaches `main`:** every pull request that touches those files gets its own copy at
 `https://ste5an.github.io/ororo-tv/pr-preview/pr-<number>/`, and the bot comments the link on the PR. Open it in Safari
 on the iPhone and try the change; the preview is removed when the PR closes. Previews share the site's origin, so you
