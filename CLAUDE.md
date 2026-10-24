@@ -85,5 +85,5 @@ python3 build.py --sign <profile> --install <TV IP>
 
 ## Checking a change
 
-`node --test test/seek.test.js` (seek logic, fake clock), `node --check www/app.js`, then build and install on the TV and have the user try it. To see a screen without a
+`node --test test/seek.test.js` (seek logic, fake clock), `node --test test/phone.test.js` (the iPhone app in headless Chromium with a fake Ororo; CI installs Playwright 1.63.0 for it, and locally `npm install --no-save playwright@1.63.0 && npx playwright install chromium` does the same), `node --check www/app.js`, then build and install on the TV and have the user try it. To see a screen without a
 TV, `python3 build.py`, then open `out/index.html` in Chrome at 1920×1080 (the API calls need a login).

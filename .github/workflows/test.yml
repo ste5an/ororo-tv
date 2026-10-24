@@ -1,4 +1,4 @@
-# Checks every push and pull request: seek logic tests, JavaScript syntax, and that the TV package builds.
+# Checks every push and pull request: seek logic tests, JavaScript syntax, that the TV package builds, and the iPhone app in a browser.
 name: Tests
 
 on:
@@ -28,3 +28,9 @@ jobs:
         run: "! grep -nE '\\?\\.[A-Za-z_(\\[]|\\?\\?' www/app.js www/seek.js"
       - name: TV package builds
         run: python3 build.py
+      - name: Install a browser for the phone app test
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: iPhone app in a browser (fake Ororo, iPhone-sized screen)
+        run: node --test test/phone.test.js
