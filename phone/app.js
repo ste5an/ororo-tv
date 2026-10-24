@@ -515,10 +515,10 @@
 
     if (item.kind === 'movie') {
       var at = resumeAt(posOf('movie', item.id)), media = { kind: 'movie', id: item.id, title: item.name };
-      actions.appendChild(primary(at ? 'Resume from ' + clock(at) : 'Play')).onclick = function () { start(media, at); };
-      var pair = actions.appendChild(h('div', 'pair'));
-      if (at) pair.appendChild(h('button', 'btn', 'Start over')).onclick = function () { start(media, 0); };
-      pair.appendChild(downloadAction('movie', item.id, 'btn', false));
+      var playRow = actions.appendChild(h('div', 'playrow'));
+      playRow.appendChild(primary(at ? 'Resume from ' + clock(at) : 'Play')).onclick = function () { start(media, at); };
+      playRow.appendChild(downloadAction('movie', item.id, 'dlsq', true));
+      if (at) actions.appendChild(h('button', 'btn', 'Start over')).onclick = function () { start(media, 0); };
       return;
     }
 
@@ -619,7 +619,7 @@
     ui.innerHTML = '<div class="controls">' +
       '<label class="menu"><span class="pill"><span class="subs-label"></span>' + ICON.chevrons + '</span><select class="subs" aria-label="Subtitles"></select></label>' +
       '<label class="menu"><span class="pill"><span class="quality-label"></span>' + ICON.chevrons + '</span><select class="quality" aria-label="Quality"></select></label>' +
-      '<button class="btn dl" disabled>' + ICON.download + '<span>Download</span></button></div><p class="note" role="status"></p>';
+      '</div><p class="note" role="status"></p>';
     var video = $(stage, 'video'), subsSel = $(ui, '.subs'), qualSel = $(ui, '.quality'), note = $(ui, '.note');
     var subsLabel = $(ui, '.subs-label'), qualLabel = $(ui, '.quality-label');
     function selText(sel) { var o = sel.options[sel.selectedIndex]; return o ? o.textContent : ''; }
@@ -628,7 +628,7 @@
       subsLabel.textContent = 'Subtitles: ' + selText(subsSel);
       qualLabel.textContent = 'Quality: ' + selText(qualSel);
     }
-    var dlBtn = $(ui, '.dl');
+    if (media.kind === 'movie') $(ui, '.controls').appendChild(downloadAction('movie', media.id, 'dlsq', true));
     var master = '', mp4 = '', variants = [], quality = 0, resume = startAt || 0, currentUrl = '', closed = false;
     var subs = [], saveTimer, flashTimer;
 
@@ -645,16 +645,6 @@
       other.classList.remove('on');
       side.classList.add('on');
     });
-
-    // Download: opens Ororo's own MP4 link in Safari, which offers to save it (Share → Save to Files). The file then
-    // plays from the Files app; it isn't stored inside this app.
-    dlBtn.onclick = function () {
-      if (!mp4) return;
-      var a = document.createElement('a');
-      a.href = mp4; a.target = '_blank'; a.rel = 'noopener'; a.download = '';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      toast('If it plays instead of saving, tap Share → Save to Files.');
-    };
 
     // The lock screen and Control Center show the title, with ±10 s and next-episode buttons.
     function mediaSession() {
@@ -801,7 +791,6 @@
       if (closed) return;
       master = d.url ? abs(String(d.url).replace('playlist_fmp4.m3u8', 'playlist.m3u8')) : '';
       mp4 = abs(d.download_url);
-      dlBtn.disabled = !mp4;
       if (!master && !mp4) throw new Error('Ororo didn’t give a video for this one.');
       subs = subtitleList(d.subtitles || d.subs || d.subtitle_files);
       subsSel.innerHTML = '';
@@ -832,7 +821,6 @@
       swap: function (next, at) {
         subs.forEach(function (sub) { if (sub.track) { URL.revokeObjectURL(sub.track.src); video.removeChild(sub.track); } });
         subs = []; variants = []; master = mp4 = currentUrl = '';
-        dlBtn.disabled = true;
         media = next;
         loadMedia(at);
       },
