@@ -709,11 +709,10 @@
     subsSel.onchange = function () { pickSub(+subsSel.value); };
     labels();
 
-    // Quality: Auto (the iPhone adapts), each resolution in the HLS stream, or the MP4 file.
+    // Quality: Auto (the iPhone adapts) or one resolution of the HLS stream. The MP4 stays as a silent fallback if the stream fails.
     function qualityOptions() {
       var opts = [{ label: 'Auto', url: master || mp4 }];
       variants.forEach(function (v) { opts.push({ label: v.label, url: v.url, height: v.height }); });
-      if (master && mp4) opts.push({ label: 'MP4', url: mp4 });
       return opts;
     }
     function loadVariants() {
