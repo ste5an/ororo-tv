@@ -171,18 +171,58 @@
     store('positions', positions);
   }
 
-  var DOWNLOAD_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>';
-  var CHECK_SVG = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/></svg>';
+  function svg(body, cls) {
+    return '<svg class="' + (cls || 'ico') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + body + '</svg>';
+  }
+  var ICON = {
+    continue: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+    movie: svg('<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 4v16M16 4v16M3 9h5M3 15h5M16 9h5M16 15h5"/>'),
+    show: svg('<rect x="3" y="5" width="18" height="12" rx="2.5"/><path d="M8 21h8M12 17v4"/>'),
+    search: svg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>'),
+    person: svg('<circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/>'),
+    back: svg('<path d="M14.5 5.5L8 12l6.5 6.5"/>'),
+    play: svg('<path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/>', 'ico sm'),
+    chevrons: svg('<path d="M8 10l4-4 4 4M8 14l4 4 4-4"/>', 'ico sm'),
+    clear: svg('<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none" opacity=".35"/><path d="M9 9l6 6M15 9l-6 6" stroke="#fff"/>'),
+    download: svg('<path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/>'),
+    check: svg('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/>')
+  };
+
+  // A bottom sheet for a short decision: a grabber, a title, actions, and always a way out.
+  function sheet(title, message, actions) {
+    var scrim = document.body.appendChild(h('div', 'scrim')), box = scrim.appendChild(h('div', 'sheet'));
+    var prev = document.activeElement;
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    box.setAttribute('aria-label', title);
+    box.appendChild(h('div', 'grab'));
+    box.appendChild(h('h2', '', title));
+    if (message) box.appendChild(h('p', '', message));
+    function close() {
+      document.removeEventListener('keydown', onKey);
+      if (scrim.parentNode) scrim.parentNode.removeChild(scrim);
+      if (prev && prev.focus) prev.focus();
+    }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', onKey);
+    actions.concat([{ label: 'Cancel' }]).forEach(function (a) {
+      var b = box.appendChild(h('button', 'btn' + (a.danger ? ' danger' : ''), a.label));
+      b.onclick = function () { close(); if (a.run) a.run(); };
+    });
+    scrim.onclick = function (e) { if (e.target === scrim) close(); };
+    box.querySelector('.btn').focus();
+  }
 
   // A round check button: filled when watched. Tapping flips it.
   function watchToggle(kind, id, onChange) {
-    var b = h('button', 'iconbtn');
+    var b = h('button', 'row-btn');
     function paint() {
       var on = isWatched(kind, id);
-      b.className = 'iconbtn' + (on ? ' on' : '');
+      b.className = 'row-btn' + (on ? ' on' : '');
       b.setAttribute('aria-label', on ? 'Mark as unwatched' : 'Mark as watched');
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
-      b.innerHTML = CHECK_SVG;
+      b.innerHTML = ICON.check;
     }
     b.onclick = function () { setWatched(kind, id, !isWatched(kind, id)); paint(); if (onChange) onChange(); };
     paint();
@@ -194,7 +234,7 @@
   function downloadAction(kind, id, cls, icon) {
     var b = h('button', cls);
     b.setAttribute('aria-label', 'Download');
-    function idle() { b.disabled = false; if (icon) b.innerHTML = DOWNLOAD_SVG; else b.textContent = 'Download'; }
+    function idle() { b.disabled = false; if (icon) b.innerHTML = ICON.download; else b.innerHTML = ICON.download + '<span>Download</span>'; }
     idle();
     b.onclick = function () {
       b.disabled = true;
@@ -223,14 +263,38 @@
 
   function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
 
+  var TABS = [['continue', 'Continue'], ['movie', 'Movies'], ['show', 'Shows'], ['search', 'Search']];
+  var tabbar = document.getElementById('tabbar'), cleanup = null;
+
+  // The tab bar belongs to the signed-in app: navigation only, and visible on every screen but sign-in and loading.
+  function chrome(on, active) {
+    document.body.classList.toggle('bare', !on);
+    tabbar.hidden = !on;
+    if (!on) return;
+    tabbar.innerHTML = '';
+    TABS.forEach(function (t) {
+      var a = tabbar.appendChild(h('a'));
+      a.href = '#/tab/' + t[0];
+      a.innerHTML = ICON[t[0]];
+      a.appendChild(h('span', '', t[1]));
+      if (t[0] === active) a.setAttribute('aria-current', 'page');
+    });
+  }
+
   function route() {
     if (player) { player.destroy(); player = null; }
-    if (!creds()) return renderLogin();
-    if (!loaded) return boot();
+    if (cleanup) { cleanup(); cleanup = null; }
+    if (!creds()) { chrome(false); return renderLogin(); }
+    if (!loaded) { chrome(false); return boot(); }
     var parts = location.hash.replace(/^#\/?/, '').split('/');
+    if (parts[0] === 'tab' && TABS.some(function (t) { return t[0] === parts[1]; })) {
+      homeState.tab = parts[1];
+      homeState.rendered = CHUNK;
+      homeState.scroll = 0;
+    }
     var item = parts[0] === 'movie' || parts[0] === 'show' ? byId[parts[0]][parts[1]] : null;
-    if (item) renderDetail(item);
-    else renderHome();
+    if (item) { chrome(true, homeState.tab || (item.kind === 'show' ? 'show' : 'movie')); renderDetail(item); }
+    else { if (!homeState.tab) homeState.tab = continueItems().length ? 'continue' : 'movie'; chrome(true, homeState.tab); renderHome(); }
   }
   window.addEventListener('hashchange', route);
 
@@ -260,15 +324,16 @@
 
   function renderLogin(message) {
     app.innerHTML =
-      '<form class="login"><div class="brand">ororo<span>tv</span></div>' +
+      '<form class="login" novalidate><div class="brand">ororo<span>tv</span></div>' +
       '<p>Sign in with your ororo.tv email and password. They stay on this phone.</p>' +
-      '<label>Email</label><input type="email" autocomplete="username" autocapitalize="off" spellcheck="false" required>' +
-      '<label>Password</label><input type="password" autocomplete="current-password" required>' +
-      '<button class="btn" type="submit">Sign in</button><p class="err"></p></form>';
-    var form = $(app, 'form'), inputs = form.querySelectorAll('input');
-    $(form, '.err').textContent = message || '';
+      '<label for="em">Email</label><input id="em" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" required>' +
+      '<label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" required>' +
+      '<button class="btn primary" type="submit">Sign in</button><p class="err" role="alert"></p></form>';
+    var form = $(app, 'form'), inputs = form.querySelectorAll('input'), err = $(form, '.err');
+    err.textContent = message || '';
     form.onsubmit = function (e) {
       e.preventDefault();
+      if (!inputs[0].value.trim() || !inputs[1].value) { err.textContent = 'Enter your ororo.tv email and password.'; (inputs[0].value.trim() ? inputs[1] : inputs[0]).focus(); return; }
       store('creds', { user: inputs[0].value.trim(), pass: inputs[1].value });
       loaded = false;
       boot();
@@ -300,51 +365,62 @@
   }
 
   function renderHome() {
-    if (!homeState.tab) homeState.tab = continueItems().length ? 'continue' : 'movie';
+    var tab = homeState.tab, title = TABS.filter(function (t) { return t[0] === tab; })[0][1];
     app.innerHTML =
-      '<div class="top"><div class="top-row"><div class="brand">ororo<span>tv</span></div><button class="link">Sign out</button></div>' +
-      '<div class="tabs"></div><div class="tools"></div></div><div class="grid"></div><p class="empty" hidden></p><div class="sentinel"></div>';
-    var tabsEl = $(app, '.tabs'), tools = $(app, '.tools'), grid = $(app, '.grid'), empty = $(app, '.empty');
+      '<header class="navbar"><span class="lead"></span><span class="small-title" aria-hidden="true"></span>' +
+      '<button class="round account" aria-label="Account">' + ICON.person + '</button></header>' +
+      '<div class="largetitle"><h1 class="t-large"></h1><span class="tools"></span></div>' +
+      '<div class="grid"></div><div class="empty" hidden></div><div class="sentinel"></div>';
+    $(app, 'h1').textContent = title;
+    $(app, '.small-title').textContent = title;
+    var tools = $(app, '.tools'), grid = $(app, '.grid'), empty = $(app, '.empty'), nav = $(app, '.navbar');
     var items = [], rendered = 0;
 
-    $(app, '.link').onclick = function () { forget('creds'); cacheClear(); loaded = false; route(); };
-    [['continue', 'Continue'], ['movie', 'Movies'], ['show', 'Shows'], ['search', 'Search']].forEach(function (t) {
-      if (t[0] === 'continue' && !continueItems().length) return;
-      var b = tabsEl.appendChild(h('button', 'tab' + (homeState.tab === t[0] ? ' on' : ''), t[1]));
-      b.onclick = function () {
-        homeState.tab = t[0];
-        homeState.rendered = CHUNK;
-        homeState.scroll = 0;
-        renderHome();
-      };
-    });
+    // The bar turns to glass once the large title has scrolled under it.
+    function onScroll() { nav.classList.toggle('scrolled', window.scrollY > 40); }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    cleanup = function () { window.removeEventListener('scroll', onScroll); };
+    onScroll();
 
-    if (homeState.tab === 'search') {
-      var input = tools.appendChild(h('input'));
-      input.type = 'search';
-      input.placeholder = 'Search movies and shows';
+    $(app, '.account').onclick = function () {
+      sheet('Sign out of Ororo?', 'You’ll need your ororo.tv email and password to sign in again. Your watched episodes and places stay on this phone.', [
+        { label: 'Sign out', danger: true, run: function () { forget('creds'); cacheClear(); loaded = false; route(); } }
+      ]);
+    };
+
+    if (tab === 'search') {
+      var bar = h('div', 'searchbar');
+      bar.innerHTML = '<form class="field" role="search">' + ICON.search + '<input type="search" enterkeyhint="search" autocomplete="off" ' +
+        'autocapitalize="off" spellcheck="false" placeholder="Movies and shows" aria-label="Search movies and shows">' +
+        '<button type="button" class="clear" aria-label="Clear search" hidden>' + ICON.clear + '</button></form>';
+      app.insertBefore(bar, grid);
+      var input = $(bar, 'input'), clear = $(bar, '.clear');
       input.value = homeState.query;
+      clear.hidden = !input.value;
+      $(bar, 'form').onsubmit = function (e) { e.preventDefault(); input.blur(); };
+      clear.onclick = function () { input.value = ''; input.oninput(); input.focus(); };
       input.oninput = function () {
         homeState.query = input.value;
+        clear.hidden = !input.value;
         clearTimeout(input._t);
-        input._t = setTimeout(function () { fill(searchResults(input.value), 'Nothing found.'); }, 250);
+        input._t = setTimeout(function () { fill(searchResults(input.value)); }, 200);
       };
       if (!homeState.query) setTimeout(function () { input.focus(); }, 50);
-    } else if (homeState.tab !== 'continue') {
-      var sel = tools.appendChild(h('select'));
-      SORTS.forEach(function (s, i) {
-        var o = sel.appendChild(h('option', '', 'Sort: ' + s[1]));
-        o.value = i;
-      });
+    } else if (tab !== 'continue') {
+      var menu = tools.appendChild(h('label', 'menu plain-menu')), pill = menu.appendChild(h('span', 'pill'));
+      var pillText = pill.appendChild(h('span', '', SORTS[homeState.sort][1]));
+      pill.insertAdjacentHTML('beforeend', ICON.chevrons);
+      var sel = menu.appendChild(h('select'));
+      sel.setAttribute('aria-label', 'Sort by');
+      SORTS.forEach(function (s, i) { sel.appendChild(h('option', '', s[1])).value = i; });
       sel.value = homeState.sort;
       sel.onchange = function () {
         homeState.sort = +sel.value;
         store('sort', homeState.sort);
         homeState.rendered = CHUNK;
-        renderHome();
+        pillText.textContent = SORTS[homeState.sort][1];
+        fill(sorted(tab));
       };
-    } else {
-      tools.hidden = true;
     }
 
     function card(item) {
@@ -354,12 +430,14 @@
       if (item.poster) {
         var img = poster.appendChild(h('img'));
         img.loading = 'lazy';
+        img.decoding = 'async';
         img.alt = '';
         img.src = item.poster;
       } else poster.appendChild(h('div', 'ph', item.name));
       var p = item.kind === 'movie' ? posOf('movie', item.id) : null;
       if (p && !finished(p) && fraction(p) > 0.02) poster.appendChild(h('div', 'bar')).appendChild(h('i')).style.width = (fraction(p) * 100).toFixed(1) + '%';
-      a.appendChild(h('div', 'title', item.name + (item.year ? ' (' + item.year + ')' : '')));
+      a.appendChild(h('div', 'title', item.name));
+      a.appendChild(h('div', 'sub', [item.year, item.kind === 'show' ? 'Show' : ''].filter(Boolean).join(' · ')));
       a.onclick = function () { homeState.scroll = window.scrollY; homeState.rendered = rendered; };
       return a;
     }
@@ -368,18 +446,32 @@
       for (; rendered < end; rendered++) frag.appendChild(card(items[rendered]));
       grid.appendChild(frag);
     }
-    function fill(list, emptyText, upTo) {
+    function emptyState() {
+      empty.innerHTML = '';
+      if (tab === 'continue') {
+        empty.appendChild(h('strong', '', 'Nothing to continue yet'));
+        empty.appendChild(h('span', '', 'Movies and shows you start playing show up here.'));
+        empty.appendChild(h('a', 'btn primary', 'Browse movies')).href = '#/tab/movie';
+      } else if (tab === 'search') {
+        empty.appendChild(h('strong', '', homeState.query.trim() ? 'No results' : 'Search Ororo'));
+        empty.appendChild(h('span', '', homeState.query.trim() ? 'Nothing matches “' + homeState.query.trim() + '”. Check the spelling or try a shorter title.' : 'Find any movie or show by its title.'));
+      } else {
+        empty.appendChild(h('strong', '', 'Ororo sent an empty list'));
+        empty.appendChild(h('span', '', 'Pull down to try again, or sign out and back in.'));
+      }
+    }
+    function fill(list, upTo) {
       items = list;
       rendered = 0;
       grid.innerHTML = '';
       more(upTo || CHUNK);
       empty.hidden = list.length > 0;
-      empty.textContent = emptyText;
+      if (!list.length) emptyState();
     }
 
-    if (homeState.tab === 'continue') fill(continueItems(), 'Nothing here yet.', homeState.rendered);
-    else if (homeState.tab === 'search') fill(searchResults(homeState.query), homeState.query ? 'Nothing found.' : 'Type a title.');
-    else fill(sorted(homeState.tab), 'Ororo returned an empty list.', homeState.rendered);
+    if (tab === 'continue') fill(continueItems(), homeState.rendered);
+    else if (tab === 'search') fill(searchResults(homeState.query));
+    else fill(sorted(tab), homeState.rendered);
 
     new IntersectionObserver(function (entries) {
       if (entries[0].isIntersecting && rendered < items.length) more();
@@ -391,13 +483,14 @@
 
   function renderDetail(item) {
     app.innerHTML =
-      '<div class="detail"><div class="navbar"><button class="back">‹ Back</button></div>' +
-      '<div class="stage"></div><div class="body"><h1></h1><div class="meta"></div><p class="now" hidden></p>' +
+      '<div class="detail"><button class="round glass back" aria-label="Back">' + ICON.back + '</button>' +
+      '<div class="stage" role="img"></div><div class="body"><h1></h1><div class="meta"></div><p class="now" hidden></p>' +
       '<div class="actions"></div><div class="player-ui" hidden></div><p class="desc"></p><div class="episodes"></div></div></div>';
     window.scrollTo(0, 0);
-    var stage = $(app, '.stage'), actions = $(app, '.actions'), now = $(app, '.now');
+    var detail = $(app, '.detail'), stage = $(app, '.stage'), actions = $(app, '.actions'), now = $(app, '.now');
     $(app, '.back').onclick = function () { go('#/'); };
     if (item.backdrop || item.poster) stage.style.backgroundImage = 'url("' + (item.backdrop || item.poster) + '")';
+    stage.setAttribute('aria-label', item.name);
     $(app, 'h1').textContent = item.name;
     $(app, '.meta').textContent = [item.year, item.rating ? '★ ' + item.rating.toFixed(1) : '', item.genres.slice(0, 3).join(', ')]
       .filter(Boolean).join('  ·  ');
@@ -406,6 +499,9 @@
     function start(media, at) {
       remember(item.kind, item.id);
       actions.hidden = true;
+      detail.classList.add('playing');
+      stage.removeAttribute('role');
+      stage.removeAttribute('aria-label');
       if (player && player.swap && media.kind === 'episode') { player.swap(media, at); }
       else {
         if (player) player.destroy();
@@ -415,14 +511,21 @@
       now.textContent = media.label || '';
       window.scrollTo(0, 0);
     }
+    function primary(label) {
+      var b = h('button', 'btn primary');
+      b.innerHTML = ICON.play;
+      b.appendChild(h('span', '', label));
+      return b;
+    }
 
     if (item.kind === 'movie') {
       var at = resumeAt(posOf('movie', item.id)), media = { kind: 'movie', id: item.id, title: item.name };
-      var play = actions.appendChild(h('button', 'btn primary', at ? '▶  Resume from ' + clock(at) : '▶  Play'));
-      play.onclick = function () { start(media, at); };
-      if (at) actions.appendChild(h('button', 'btn', 'From the start')).onclick = function () { start(media, 0); };
-      actions.appendChild(downloadAction('movie', item.id, 'btn', false));
-      actions.appendChild(h('button', 'btn', isWatched('movie', item.id) ? 'Mark as unwatched' : 'Mark as watched')).onclick = function () {
+      actions.appendChild(primary(at ? 'Resume from ' + clock(at) : 'Play')).onclick = function () { start(media, at); };
+      var pair = actions.appendChild(h('div', 'pair'));
+      if (at) pair.appendChild(h('button', 'btn', 'Start over')).onclick = function () { start(media, 0); };
+      pair.appendChild(downloadAction('movie', item.id, 'btn', false));
+      var watched = isWatched('movie', item.id);
+      pair.appendChild(h('button', 'btn', watched ? 'Mark as unwatched' : 'Mark as watched')).onclick = function () {
         setWatched('movie', item.id, !isWatched('movie', item.id));
         renderDetail(item);
       };
@@ -449,7 +552,7 @@
       actions.innerHTML = '';
       var next = nextEpisode();
       var label = posOf('episode', next.id) && !finished(posOf('episode', next.id)) ? 'Resume' : 'Play';
-      actions.appendChild(h('button', 'btn primary', '▶  ' + label + ' S' + next.season + ' E' + next.number)).onclick = function () {
+      actions.appendChild(primary(label + ' S' + next.season + ' E' + next.number)).onclick = function () {
         playEpisode(episodes.indexOf(next));
       };
     }
@@ -478,14 +581,22 @@
       epsBox.innerHTML = '';
       var seasons = [];
       episodes.forEach(function (ep) { if (seasons.indexOf(ep.season) < 0) seasons.push(ep.season); });
-      var chips = epsBox.appendChild(h('div', 'seasons'));
-      seasons.forEach(function (n) {
-        chips.appendChild(h('button', 'tab' + (n === season ? ' on' : ''), 'Season ' + n)).onclick = function () { renderSeasons(n); };
-      });
+      var head = epsBox.appendChild(h('div', 'seasonbar'));
+      head.appendChild(h('h2', '', 'Season ' + season));
+      if (seasons.length > 1) {
+        var menu = head.appendChild(h('label', 'menu plain-menu'));
+        menu.appendChild(h('span', 'pill')).innerHTML = '<span>Seasons</span>' + ICON.chevrons;
+        var sel = menu.appendChild(h('select'));
+        sel.setAttribute('aria-label', 'Choose a season');
+        seasons.forEach(function (n) { sel.appendChild(h('option', '', 'Season ' + n)).value = n; });
+        sel.value = season;
+        sel.onchange = function () { renderSeasons(+sel.value); };
+      }
+      var list = epsBox.appendChild(h('div', 'eplist'));
       episodes.forEach(function (ep, i) {
         if (ep.season !== season) return;
-        var wrap = epsBox.appendChild(h('div', 'eprow'));
-        var row = wrap.appendChild(h('button', 'ep' + (ep.id === playingId ? ' current' : '')));
+        var wrap = list.appendChild(h('div', 'eprow' + (ep.id === playingId ? ' current' : '')));
+        var row = wrap.appendChild(h('button', 'ep'));
         row.appendChild(h('div', 'n', ep.number));
         var txt = row.appendChild(h('div', 'txt'));
         txt.appendChild(h('div', 'et', ep.title || 'Episode ' + ep.number));
@@ -494,13 +605,13 @@
         function paint() {
           var p = posOf('episode', ep.id);
           state.innerHTML = '';
-          if (finished(p)) state.textContent = '✓';
+          if (finished(p)) state.textContent = 'Watched';
           else if (fraction(p) > 0.02) state.appendChild(h('div', 'mini')).appendChild(h('i')).style.width = (fraction(p) * 100).toFixed(1) + '%';
         }
         paint();
         row.onclick = function () { playEpisode(i); };
         wrap.appendChild(watchToggle('episode', ep.id, function () { paint(); paintPlay(); }));
-        wrap.appendChild(downloadAction('episode', ep.id, 'iconbtn', true));
+        wrap.appendChild(downloadAction('episode', ep.id, 'row-btn', true));
       });
     }
   }
@@ -511,11 +622,20 @@
     stage.classList.add('playing');
     stage.style.backgroundImage = '';
     stage.innerHTML = '<video playsinline controls preload="auto"></video>' +
-      '<div class="skip-flash left"></div><div class="skip-flash right"></div>';
+      '<div class="skip-flash left" aria-hidden="true"></div><div class="skip-flash right" aria-hidden="true"></div>';
     ui.hidden = false;
-    ui.innerHTML = '<div class="controls"><select class="subs"></select><select class="quality"></select>' +
-      '<button class="dl" disabled>Download</button></div><p class="note"></p>';
+    ui.innerHTML = '<div class="controls">' +
+      '<label class="menu"><span class="pill"><span class="subs-label"></span>' + ICON.chevrons + '</span><select class="subs" aria-label="Subtitles"></select></label>' +
+      '<label class="menu"><span class="pill"><span class="quality-label"></span>' + ICON.chevrons + '</span><select class="quality" aria-label="Quality"></select></label>' +
+      '<button class="btn dl" disabled>' + ICON.download + '<span>Download</span></button></div><p class="note" role="status"></p>';
     var video = $(stage, 'video'), subsSel = $(ui, '.subs'), qualSel = $(ui, '.quality'), note = $(ui, '.note');
+    var subsLabel = $(ui, '.subs-label'), qualLabel = $(ui, '.quality-label');
+    function selText(sel) { var o = sel.options[sel.selectedIndex]; return o ? o.textContent : ''; }
+    // The visible buttons show the choice; the invisible select on top of each opens iOS's own menu.
+    function labels() {
+      subsLabel.textContent = 'Subtitles: ' + selText(subsSel);
+      qualLabel.textContent = 'Quality: ' + selText(qualSel);
+    }
     var dlBtn = $(ui, '.dl');
     var master = '', mp4 = '', variants = [], quality = 0, resume = startAt || 0, currentUrl = '', closed = false;
     var subs = [], saveTimer, flashTimer;
@@ -587,6 +707,7 @@
     function pickSub(i, quiet) {
       if (!quiet) store('sublang', i < 0 ? 'off' : subs[i].lang);
       subsSel.value = i;
+      labels();
       if (i < 0) { showSub(-1); return; }
       var sub = subs[i];
       if (sub.track) { showSub(i); return; }
@@ -604,6 +725,7 @@
       });
     }
     subsSel.onchange = function () { pickSub(+subsSel.value); };
+    labels();
 
     // Quality: Auto (the iPhone adapts), each resolution in the HLS stream, or the MP4 file.
     function qualityOptions() {
@@ -637,13 +759,15 @@
     function fillQuality() {
       qualSel.innerHTML = '';
       qualityOptions().forEach(function (o, i) {
-        var opt = qualSel.appendChild(h('option', '', 'Quality: ' + o.label));
+        var opt = qualSel.appendChild(h('option', '', o.label));
         opt.value = i;
       });
       qualSel.value = quality;
+      labels();
     }
     qualSel.onchange = function () {
       quality = +qualSel.value;
+      labels();
       store('quality', qualityOptions()[quality].label);
       playUrl(qualityOptions()[quality].url, video.currentTime, !video.paused);
     };
@@ -666,7 +790,7 @@
     video.addEventListener('error', function () {
       if (closed || !currentUrl) return;
       var at = video.currentTime || resume;
-      if (quality !== 0) { toast('That quality didn’t play. Back to Auto.'); quality = 0; qualSel.value = 0; playUrl(qualityOptions()[0].url, at); }
+      if (quality !== 0) { toast('That quality didn’t play. Back to Auto.'); quality = 0; qualSel.value = 0; labels(); playUrl(qualityOptions()[0].url, at); }
       else if (mp4 && currentUrl !== mp4) playUrl(mp4, at);
       else note.textContent = 'This video won’t play here.';
     });
@@ -689,14 +813,14 @@
       if (!master && !mp4) throw new Error('Ororo didn’t give a video for this one.');
       subs = subtitleList(d.subtitles || d.subs || d.subtitle_files);
       subsSel.innerHTML = '';
-      subsSel.appendChild(h('option', '', subs.length ? 'Subtitles: Off' : 'No subtitles')).value = -1;
+      subsSel.appendChild(h('option', '', subs.length ? 'Off' : 'None available')).value = -1;
       subs.forEach(function (sub, i) {
-        var o = subsSel.appendChild(h('option', '', 'CC: ' + langName(sub.lang)));
+        var o = subsSel.appendChild(h('option', '', langName(sub.lang)));
         o.value = i;
       });
       var pref = load('sublang', 'en'), langs = subs.map(function (x) { return x.lang; });
       var first = pref === 'off' ? -1 : langs.indexOf(pref) >= 0 ? langs.indexOf(pref) : langs.indexOf('en');
-      if (first >= 0) pickSub(first, true); else subsSel.value = -1;
+      if (first >= 0) pickSub(first, true); else { subsSel.value = -1; labels(); }
       return loadVariants().then(function (list) {
         if (closed) return;
         variants = list;

@@ -15,6 +15,12 @@ the iPhone's own `<video controls playsinline>`; subtitles are fetched, converte
 publishes it to https://ste5an.github.io/ororo-tv/ (`.github/workflows/pages.yml` copies `www/seek.js` and
 `www/icon.png` next to it). To try it locally, copy those two files into a copy of `phone/` and open `index.html`.
 
+**Testing a change before it reaches `main`:** every pull request that touches those files gets its own copy at
+`https://ste5an.github.io/ororo-tv/pr-preview/pr-<number>/`, and the bot comments the link on the PR. Open it in Safari
+on the iPhone and try the change; the preview is removed when the PR closes. Previews share the site's origin, so you
+are already signed in and your watch history is the same as on the real app. `main` publishes the real app. Both live
+on the `gh-pages` branch, so Settings → Pages must stay on *Deploy from a branch → gh-pages / (root)*.
+
 ## Secrets
 
 - The Ororo email and password live only in `credentials.properties` (gitignored) or in the TV's local storage.

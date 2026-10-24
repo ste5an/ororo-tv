@@ -1,33 +1,54 @@
-# Publishes the iPhone web app (phone/, plus the shared www/seek.js and icon) to GitHub Pages.
+# Publishes the iPhone web app (phone/, plus the shared www/seek.js and icon).
+#   push to main  -> https://ste5an.github.io/ororo-tv/
+#   pull request  -> https://ste5an.github.io/ororo-tv/pr-preview/pr-<number>/   (removed when the PR closes)
+# Both live on the gh-pages branch: GitHub Pages must be set to "Deploy from a branch: gh-pages, / (root)".
 name: Phone app
 
 on:
   push:
     branches: [main]
     paths: ['phone/**', 'www/seek.js', 'www/icon.png', '.github/workflows/pages.yml']
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+    paths: ['phone/**', 'www/seek.js', 'www/icon.png', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
+  pull-requests: write
 
+# One run at a time, because every run pushes to gh-pages.
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: phone-pages
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  production:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - name: Assemble the site
-        run: mkdir site && cp -R phone/. site/ && cp www/seek.js www/icon.png site/
-      - uses: actions/upload-pages-artifact@v3
+        run: mkdir site && cp -R phone/. site/ && cp www/seek.js www/icon.png site/ && touch site/.nojekyll
+      - name: Publish to the site root (keeps the PR previews)
+        uses: JamesIves/github-pages-deploy-action@fa24774553152dd7873cd16ebd8d959b010c5445 # v4.9.0
         with:
-          path: site
-      - id: deploy
-        uses: actions/deploy-pages@v4
+          branch: gh-pages
+          folder: site
+          clean-exclude: pr-preview/
+
+  preview:
+    # Pull requests from forks get a read-only token, so they can't publish a preview.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the site
+        run: mkdir site && cp -R phone/. site/ && cp www/seek.js www/icon.png site/ && touch site/.nojekyll
+      - name: Publish or remove this pull request's preview
+        uses: rossjrw/pr-preview-action@ffa7509e91a3ec8dfc2e5536c4d5c1acdf7a6de9 # v1.8.1
+        with:
+          source-dir: site
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
+          action: auto
