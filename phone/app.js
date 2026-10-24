@@ -186,7 +186,9 @@
     chevrons: svg('<path d="M8 10l4-4 4 4M8 14l4 4 4-4"/>', 'ico sm'),
     clear: svg('<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none" opacity=".35"/><path d="M9 9l6 6M15 9l-6 6" stroke="#fff"/>'),
     download: svg('<path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/>'),
-    check: svg('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/>')
+    check: svg('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/>'),
+    watched: svg('<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path d="M8 12.5l2.7 2.7L16 9.8" stroke="var(--surface)" stroke-width="2"/>', 'ico sm'),
+    more: svg('<circle cx="5.5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.6" fill="currentColor" stroke="none"/>')
   };
 
   // A bottom sheet for a short decision: a grabber, a title, actions, and always a way out.
@@ -208,25 +210,10 @@
     document.addEventListener('keydown', onKey);
     actions.concat([{ label: 'Cancel' }]).forEach(function (a) {
       var b = box.appendChild(h('button', 'btn' + (a.danger ? ' danger' : ''), a.label));
-      b.onclick = function () { close(); if (a.run) a.run(); };
+      b.onclick = function () { if (a.keepOpen) { a.run(b, close); return; } close(); if (a.run) a.run(); };
     });
     scrim.onclick = function (e) { if (e.target === scrim) close(); };
     box.querySelector('.btn').focus();
-  }
-
-  // A round check button: filled when watched. Tapping flips it.
-  function watchToggle(kind, id, onChange) {
-    var b = h('button', 'row-btn');
-    function paint() {
-      var on = isWatched(kind, id);
-      b.className = 'row-btn' + (on ? ' on' : '');
-      b.setAttribute('aria-label', on ? 'Mark as unwatched' : 'Mark as watched');
-      b.setAttribute('aria-pressed', on ? 'true' : 'false');
-      b.innerHTML = ICON.check;
-    }
-    b.onclick = function () { setWatched(kind, id, !isWatched(kind, id)); paint(); if (onChange) onChange(); };
-    paint();
-    return b;
   }
 
   // Download without playing. Tap 1 asks Ororo for the MP4 link; it then turns into a real link, because Safari only
@@ -256,10 +243,35 @@
     return b;
   }
 
+  // The same download, as a sheet action. The button turns into a real link after Ororo answers, because Safari only
+  // opens a link after a direct tap.
+  function downloadSheetAction(kind, id) {
+    return {
+      label: 'Download', keepOpen: true,
+      run: function (btn, close) {
+        btn.disabled = true;
+        btn.textContent = 'Preparing…';
+        api((kind === 'movie' ? '/movies/' : '/episodes/') + id).then(function (d) {
+          var url = abs(d.download_url);
+          if (!url) throw new Error('Ororo didn’t give a download link for this one.');
+          var a = h('a', 'btn primary', 'Tap to save');
+          a.href = url; a.target = '_blank'; a.rel = 'noopener';
+          a.onclick = function () { setTimeout(close, 400); };
+          btn.parentNode.replaceChild(a, btn);
+          a.focus();
+        }).catch(function (e) {
+          btn.disabled = false;
+          if (e.status === 401) { close(); forget('creds'); cacheClear(); loaded = false; route(); return; }
+          btn.textContent = (e.message || 'Couldn’t get the link.') + ' Tap to try again.';
+        });
+      }
+    };
+  }
+
   // ---------------------------------------------------------------- routing: #/  #/movie/ID  #/show/ID
 
   var app = document.getElementById('app');
-  var player = null, homeState = { tab: null, sort: load('sort', 0), query: '', rendered: CHUNK, scroll: 0 };
+  var player = null, homeState = { tab: null, sort: load('sort', 0), year: load('year', ''), query: '', rendered: CHUNK, scroll: 0 };
 
   function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
 
@@ -354,6 +366,23 @@
     }
     return sortCache[id];
   }
+  // Year filter: '' (any), 'd2010' (the 2010s) or 'y2016' (that year).
+  function yearOf(it) { return parseInt(it.year, 10) || 0; }
+  function yearMatch(it, f) {
+    var y = yearOf(it);
+    if (!f) return true;
+    return f.charAt(0) === 'd' ? y >= +f.slice(1) && y < +f.slice(1) + 10 : y === +f.slice(1);
+  }
+  function yearLabel(f) { return !f ? 'Any year' : f.charAt(0) === 'd' ? f.slice(1) + 's' : f.slice(1); }
+  function yearsIn(kind) {
+    var seen = {}, years = [];
+    catalog[kind].forEach(function (it) { var y = yearOf(it); if (y && !seen[y]) { seen[y] = 1; years.push(y); } });
+    return years.sort(function (a, b) { return b - a; });
+  }
+  function shown(kind) {
+    var list = sorted(kind), f = homeState.year;
+    return f ? list.filter(function (it) { return yearMatch(it, f); }) : list;
+  }
   function searchResults(q) {
     q = q.trim().toLowerCase();
     if (!q) return [];
@@ -407,19 +436,44 @@
       };
       if (!homeState.query) setTimeout(function () { input.focus(); }, 50);
     } else if (tab !== 'continue') {
-      var menu = tools.appendChild(h('label', 'menu plain-menu')), pill = menu.appendChild(h('span', 'pill'));
-      var pillText = pill.appendChild(h('span', '', SORTS[homeState.sort][1]));
-      pill.insertAdjacentHTML('beforeend', ICON.chevrons);
-      var sel = menu.appendChild(h('select'));
-      sel.setAttribute('aria-label', 'Sort by');
-      SORTS.forEach(function (s, i) { sel.appendChild(h('option', '', s[1])).value = i; });
-      sel.value = homeState.sort;
-      sel.onchange = function () {
-        homeState.sort = +sel.value;
+      // Two native menus: the select on top of each button opens iOS's own picker.
+      var menu = function (label, current, options, onPick) {
+        var m = tools.appendChild(h('label', 'menu')), pill = m.appendChild(h('span', 'pill'));
+        var text = pill.appendChild(h('span', '', current));
+        pill.insertAdjacentHTML('beforeend', ICON.chevrons);
+        var sel = m.appendChild(h('select'));
+        sel.setAttribute('aria-label', label);
+        options(sel);
+        return { sel: sel, text: text };
+      };
+      var yearMenu = menu('Filter by year', yearLabel(homeState.year), function (sel) {
+        sel.appendChild(h('option', '', 'Any year')).value = '';
+        var decades = {};
+        yearsIn(tab).forEach(function (y) { decades[Math.floor(y / 10) * 10] = 1; });
+        var groupD = sel.appendChild(h('optgroup')), groupY = sel.appendChild(h('optgroup'));
+        groupD.label = 'Decade'; groupY.label = 'Year';
+        Object.keys(decades).sort(function (a, b) { return b - a; }).forEach(function (d) { groupD.appendChild(h('option', '', d + 's')).value = 'd' + d; });
+        yearsIn(tab).forEach(function (y) { groupY.appendChild(h('option', '', String(y))).value = 'y' + y; });
+        sel.value = homeState.year;
+        if (sel.value !== homeState.year) { homeState.year = ''; sel.value = ''; }
+      });
+      yearMenu.sel.onchange = function () {
+        homeState.year = yearMenu.sel.value;
+        store('year', homeState.year);
+        yearMenu.text.textContent = yearLabel(homeState.year);
+        window.scrollTo(0, 0);
+        fill(shown(tab));
+      };
+      var sortMenu = menu('Sort by', SORTS[homeState.sort][1], function (sel) {
+        SORTS.forEach(function (x, i) { sel.appendChild(h('option', '', x[1])).value = i; });
+        sel.value = homeState.sort;
+      });
+      sortMenu.sel.onchange = function () {
+        homeState.sort = +sortMenu.sel.value;
         store('sort', homeState.sort);
-        homeState.rendered = CHUNK;
-        pillText.textContent = SORTS[homeState.sort][1];
-        fill(sorted(tab));
+        sortMenu.text.textContent = SORTS[homeState.sort][1];
+        window.scrollTo(0, 0);
+        fill(shown(tab));
       };
     }
 
@@ -455,6 +509,11 @@
       } else if (tab === 'search') {
         empty.appendChild(h('strong', '', homeState.query.trim() ? 'No results' : 'Search Ororo'));
         empty.appendChild(h('span', '', homeState.query.trim() ? 'Nothing matches “' + homeState.query.trim() + '”. Check the spelling or try a shorter title.' : 'Find any movie or show by its title.'));
+      } else if (homeState.year) {
+        empty.appendChild(h('strong', '', 'Nothing from ' + yearLabel(homeState.year)));
+        empty.appendChild(h('span', '', 'No ' + (tab === 'show' ? 'shows' : 'movies') + ' match that year.'));
+        var all = empty.appendChild(h('button', 'btn primary', 'Show any year'));
+        all.onclick = function () { homeState.year = ''; store('year', ''); renderHome(); };
       } else {
         empty.appendChild(h('strong', '', 'Ororo sent an empty list'));
         empty.appendChild(h('span', '', 'Pull down to try again, or sign out and back in.'));
@@ -471,7 +530,7 @@
 
     if (tab === 'continue') fill(continueItems(), homeState.rendered);
     else if (tab === 'search') fill(searchResults(homeState.query));
-    else fill(sorted(tab), homeState.rendered);
+    else fill(shown(tab), homeState.rendered);
 
     new IntersectionObserver(function (entries) {
       if (entries[0].isIntersecting && rendered < items.length) more();
@@ -605,13 +664,25 @@
         function paint() {
           var p = posOf('episode', ep.id);
           state.innerHTML = '';
-          if (finished(p)) state.textContent = 'Watched';
-          else if (fraction(p) > 0.02) state.appendChild(h('div', 'mini')).appendChild(h('i')).style.width = (fraction(p) * 100).toFixed(1) + '%';
+          if (finished(p)) { state.innerHTML = ICON.watched; state.setAttribute('role', 'img'); state.setAttribute('aria-label', 'Watched'); }
+          else {
+            state.removeAttribute('role'); state.removeAttribute('aria-label');
+            if (fraction(p) > 0.02) state.appendChild(h('div', 'mini')).appendChild(h('i')).style.width = (fraction(p) * 100).toFixed(1) + '%';
+          }
         }
         paint();
         row.onclick = function () { playEpisode(i); };
-        wrap.appendChild(watchToggle('episode', ep.id, function () { paint(); paintPlay(); }));
-        wrap.appendChild(downloadAction('episode', ep.id, 'row-btn', true));
+        var more = wrap.appendChild(h('button', 'row-btn'));
+        more.innerHTML = ICON.more;
+        more.setAttribute('aria-label', 'More for ' + (ep.title || 'episode ' + ep.number));
+        more.setAttribute('aria-haspopup', 'dialog');
+        more.onclick = function () {
+          var seen = isWatched('episode', ep.id);
+          sheet(ep.title || 'Episode ' + ep.number, 'Season ' + ep.season + ', episode ' + ep.number, [
+            { label: seen ? 'Mark as unwatched' : 'Mark as watched', run: function () { setWatched('episode', ep.id, !seen); paint(); paintPlay(); } },
+            downloadSheetAction('episode', ep.id)
+          ]);
+        };
       });
     }
   }
