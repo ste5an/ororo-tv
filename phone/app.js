@@ -242,7 +242,7 @@
   function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
 
   var TABS = [['continue', 'Continue'], ['movie', 'Movies'], ['show', 'Shows'], ['search', 'Search']];
-  var tabbar = document.getElementById('tabbar'), cleanup = null;
+  var tabbar = document.getElementById('tabbar');
 
   // The tab bar belongs to the signed-in app: navigation only, and visible on every screen but sign-in and loading.
   function chrome(on, active) {
@@ -261,7 +261,6 @@
 
   function route() {
     if (player) { player.destroy(); player = null; }
-    if (cleanup) { cleanup(); cleanup = null; }
     if (!creds()) { chrome(false); return renderLogin(); }
     if (!loaded) { chrome(false); return boot(); }
     var parts = location.hash.replace(/^#\/?/, '').split('/');
@@ -350,20 +349,12 @@
   function renderHome() {
     var tab = homeState.tab, title = TABS.filter(function (t) { return t[0] === tab; })[0][1];
     app.innerHTML =
-      '<header class="navbar"><span class="lead"></span><span class="small-title" aria-hidden="true"></span>' +
-      '<button class="round account" aria-label="Account">' + ICON.person + '</button></header>' +
-      '<div class="largetitle"><h1 class="t-large"></h1><span class="tools"></span></div>' +
+      '<div class="largetitle"><h1 class="t-large"></h1><span class="tools"></span>' +
+      '<button class="round account" aria-label="Account">' + ICON.person + '</button></div>' +
       '<div class="grid"></div><div class="empty" hidden></div><div class="sentinel"></div>';
     $(app, 'h1').textContent = title;
-    $(app, '.small-title').textContent = title;
-    var tools = $(app, '.tools'), grid = $(app, '.grid'), empty = $(app, '.empty'), nav = $(app, '.navbar');
+    var tools = $(app, '.tools'), grid = $(app, '.grid'), empty = $(app, '.empty');
     var items = [], rendered = 0;
-
-    // The bar turns to glass once the large title has scrolled under it.
-    function onScroll() { nav.classList.toggle('scrolled', window.scrollY > 40); }
-    window.addEventListener('scroll', onScroll, { passive: true });
-    cleanup = function () { window.removeEventListener('scroll', onScroll); };
-    onScroll();
 
     $(app, '.account').onclick = function () {
       sheet('Sign out of Ororo?', 'You’ll need your ororo.tv email and password to sign in again. Your watched episodes and places stay on this phone.', [
