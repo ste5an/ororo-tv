@@ -162,15 +162,6 @@
     return load('history', []).map(function (x) { return byId[x.kind][x.id]; }).filter(Boolean);
   }
 
-  // Watched / unwatched by hand. "Watched" is a finished position (see finished()); "unwatched" removes the position.
-  function isWatched(kind, id) { return finished(posOf(kind, id)); }
-  function setWatched(kind, id, on) {
-    var key = posKey(kind, id), p = positions[key], d = p && p.d ? p.d : 1;
-    if (on) positions[key] = { t: d, d: d, at: Date.now() };
-    else delete positions[key];
-    store('positions', positions);
-  }
-
   function svg(body, cls) {
     return '<svg class="' + (cls || 'ico') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
       'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + body + '</svg>';
@@ -187,8 +178,7 @@
     clear: svg('<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none" opacity=".35"/><path d="M9 9l6 6M15 9l-6 6" stroke="#fff"/>'),
     download: svg('<path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/>'),
     check: svg('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/>'),
-    watched: svg('<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path d="M8 12.5l2.7 2.7L16 9.8" stroke="var(--surface)" stroke-width="2"/>', 'ico sm'),
-    more: svg('<circle cx="5.5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.6" fill="currentColor" stroke="none"/>')
+    watched: svg('<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path d="M8 12.5l2.7 2.7L16 9.8" stroke="var(--surface)" stroke-width="2"/>', 'ico sm')
   };
 
   // A bottom sheet for a short decision: a grabber, a title, actions, and always a way out.
@@ -210,7 +200,7 @@
     document.addEventListener('keydown', onKey);
     actions.concat([{ label: 'Cancel' }]).forEach(function (a) {
       var b = box.appendChild(h('button', 'btn' + (a.danger ? ' danger' : ''), a.label));
-      b.onclick = function () { if (a.keepOpen) { a.run(b, close); return; } close(); if (a.run) a.run(); };
+      b.onclick = function () { close(); if (a.run) a.run(); };
     });
     scrim.onclick = function (e) { if (e.target === scrim) close(); };
     box.querySelector('.btn').focus();
@@ -225,15 +215,16 @@
     idle();
     b.onclick = function () {
       b.disabled = true;
-      b.textContent = icon ? '…' : 'Preparing…';
+      b.innerHTML = icon ? '<span aria-hidden="true">…</span>' : 'Preparing…';
       api((kind === 'movie' ? '/movies/' : '/episodes/') + id).then(function (d) {
         var url = abs(d.download_url);
         if (!url) throw new Error('Ororo didn’t give a download link for this one.');
-        var a = h('a', cls + ' ready', icon ? 'Save' : 'Tap to save');
+        var a = h('a', cls + ' ready');
+        if (icon) a.innerHTML = ICON.download; else a.innerHTML = ICON.download + '<span>Tap to save</span>';
         a.href = url; a.target = '_blank'; a.rel = 'noopener';
         a.setAttribute('aria-label', 'Save file');
         b.parentNode.replaceChild(a, b);
-        toast('Ready: tap “' + a.textContent + '”. If it plays instead of saving, tap Share → Save to Files.');
+        toast('Ready. Tap the highlighted download button to save. If it plays instead of saving, tap Share → Save to Files.');
       }).catch(function (e) {
         idle();
         if (e.status === 401) { forget('creds'); cacheClear(); loaded = false; route(); return; }
@@ -243,35 +234,10 @@
     return b;
   }
 
-  // The same download, as a sheet action. The button turns into a real link after Ororo answers, because Safari only
-  // opens a link after a direct tap.
-  function downloadSheetAction(kind, id) {
-    return {
-      label: 'Download', keepOpen: true,
-      run: function (btn, close) {
-        btn.disabled = true;
-        btn.textContent = 'Preparing…';
-        api((kind === 'movie' ? '/movies/' : '/episodes/') + id).then(function (d) {
-          var url = abs(d.download_url);
-          if (!url) throw new Error('Ororo didn’t give a download link for this one.');
-          var a = h('a', 'btn primary', 'Tap to save');
-          a.href = url; a.target = '_blank'; a.rel = 'noopener';
-          a.onclick = function () { setTimeout(close, 400); };
-          btn.parentNode.replaceChild(a, btn);
-          a.focus();
-        }).catch(function (e) {
-          btn.disabled = false;
-          if (e.status === 401) { close(); forget('creds'); cacheClear(); loaded = false; route(); return; }
-          btn.textContent = (e.message || 'Couldn’t get the link.') + ' Tap to try again.';
-        });
-      }
-    };
-  }
-
   // ---------------------------------------------------------------- routing: #/  #/movie/ID  #/show/ID
 
   var app = document.getElementById('app');
-  var player = null, homeState = { tab: null, sort: load('sort', 0), year: load('year', ''), query: '', rendered: CHUNK, scroll: 0 };
+  var player = null, homeState = { tab: null, sort: Math.min(+load('sort', 0) || 0, 4), query: '', rendered: CHUNK, scroll: 0 };
 
   function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
 
@@ -354,7 +320,8 @@
 
   // ---------------------------------------------------------------- home
 
-  var SORTS = [['pop', 'Popular'], ['fresh', 'New'], ['rating', 'Top rated'], ['name', 'A–Z']];
+  // 'year' is the release year, newest first, with a heading per year. The order of the first four is kept for saved choices.
+  var SORTS = [['pop', 'Popular'], ['fresh', 'Recently added'], ['rating', 'Top rated'], ['name', 'A–Z'], ['year', 'Release year']];
   var sortCache = {};
 
   function sorted(kind) {
@@ -362,27 +329,14 @@
     if (!sortCache[id]) {
       sortCache[id] = catalog[kind].slice().sort(key === 'name'
         ? function (a, b) { return a.name.localeCompare(b.name); }
-        : function (a, b) { return b[key] - a[key] || b.pop - a.pop; });
+        : key === 'year'
+          ? function (a, b) { return yearOf(b) - yearOf(a) || b.pop - a.pop; }
+          : function (a, b) { return b[key] - a[key] || b.pop - a.pop; });
     }
     return sortCache[id];
   }
-  // Year filter: '' (any), 'd2010' (the 2010s) or 'y2016' (that year).
   function yearOf(it) { return parseInt(it.year, 10) || 0; }
-  function yearMatch(it, f) {
-    var y = yearOf(it);
-    if (!f) return true;
-    return f.charAt(0) === 'd' ? y >= +f.slice(1) && y < +f.slice(1) + 10 : y === +f.slice(1);
-  }
-  function yearLabel(f) { return !f ? 'Any year' : f.charAt(0) === 'd' ? f.slice(1) + 's' : f.slice(1); }
-  function yearsIn(kind) {
-    var seen = {}, years = [];
-    catalog[kind].forEach(function (it) { var y = yearOf(it); if (y && !seen[y]) { seen[y] = 1; years.push(y); } });
-    return years.sort(function (a, b) { return b - a; });
-  }
-  function shown(kind) {
-    var list = sorted(kind), f = homeState.year;
-    return f ? list.filter(function (it) { return yearMatch(it, f); }) : list;
-  }
+
   function searchResults(q) {
     q = q.trim().toLowerCase();
     if (!q) return [];
@@ -436,44 +390,21 @@
       };
       if (!homeState.query) setTimeout(function () { input.focus(); }, 50);
     } else if (tab !== 'continue') {
-      // Two native menus: the select on top of each button opens iOS's own picker.
-      var menu = function (label, current, options, onPick) {
-        var m = tools.appendChild(h('label', 'menu')), pill = m.appendChild(h('span', 'pill'));
-        var text = pill.appendChild(h('span', '', current));
-        pill.insertAdjacentHTML('beforeend', ICON.chevrons);
-        var sel = m.appendChild(h('select'));
-        sel.setAttribute('aria-label', label);
-        options(sel);
-        return { sel: sel, text: text };
-      };
-      var yearMenu = menu('Filter by year', yearLabel(homeState.year), function (sel) {
-        sel.appendChild(h('option', '', 'Any year')).value = '';
-        var decades = {};
-        yearsIn(tab).forEach(function (y) { decades[Math.floor(y / 10) * 10] = 1; });
-        var groupD = sel.appendChild(h('optgroup')), groupY = sel.appendChild(h('optgroup'));
-        groupD.label = 'Decade'; groupY.label = 'Year';
-        Object.keys(decades).sort(function (a, b) { return b - a; }).forEach(function (d) { groupD.appendChild(h('option', '', d + 's')).value = 'd' + d; });
-        yearsIn(tab).forEach(function (y) { groupY.appendChild(h('option', '', String(y))).value = 'y' + y; });
-        sel.value = homeState.year;
-        if (sel.value !== homeState.year) { homeState.year = ''; sel.value = ''; }
-      });
-      yearMenu.sel.onchange = function () {
-        homeState.year = yearMenu.sel.value;
-        store('year', homeState.year);
-        yearMenu.text.textContent = yearLabel(homeState.year);
-        window.scrollTo(0, 0);
-        fill(shown(tab));
-      };
-      var sortMenu = menu('Sort by', SORTS[homeState.sort][1], function (sel) {
-        SORTS.forEach(function (x, i) { sel.appendChild(h('option', '', x[1])).value = i; });
-        sel.value = homeState.sort;
-      });
-      sortMenu.sel.onchange = function () {
-        homeState.sort = +sortMenu.sel.value;
+      // The select on top of the button opens iOS's own picker.
+      var m = tools.appendChild(h('label', 'menu')), pill = m.appendChild(h('span', 'pill'));
+      var pillText = pill.appendChild(h('span', '', SORTS[homeState.sort][1]));
+      pill.insertAdjacentHTML('beforeend', ICON.chevrons);
+      var sel = m.appendChild(h('select'));
+      sel.setAttribute('aria-label', 'Sort by');
+      SORTS.forEach(function (x, i) { sel.appendChild(h('option', '', x[1])).value = i; });
+      sel.value = homeState.sort;
+      sel.onchange = function () {
+        homeState.sort = +sel.value;
         store('sort', homeState.sort);
-        sortMenu.text.textContent = SORTS[homeState.sort][1];
+        homeState.rendered = CHUNK;
+        pillText.textContent = SORTS[homeState.sort][1];
         window.scrollTo(0, 0);
-        fill(shown(tab));
+        fill(sorted(tab));
       };
     }
 
@@ -495,9 +426,17 @@
       a.onclick = function () { homeState.scroll = window.scrollY; homeState.rendered = rendered; };
       return a;
     }
+    var byYear = false, lastYear = null;
     function more(upTo) {
       var frag = document.createDocumentFragment(), end = Math.min(items.length, upTo || rendered + CHUNK);
-      for (; rendered < end; rendered++) frag.appendChild(card(items[rendered]));
+      for (; rendered < end; rendered++) {
+        var it = items[rendered];
+        if (byYear && yearOf(it) !== lastYear) {
+          lastYear = yearOf(it);
+          frag.appendChild(h('h2', 'yearhead', lastYear ? String(lastYear) : 'Year unknown'));
+        }
+        frag.appendChild(card(it));
+      }
       grid.appendChild(frag);
     }
     function emptyState() {
@@ -509,11 +448,6 @@
       } else if (tab === 'search') {
         empty.appendChild(h('strong', '', homeState.query.trim() ? 'No results' : 'Search Ororo'));
         empty.appendChild(h('span', '', homeState.query.trim() ? 'Nothing matches “' + homeState.query.trim() + '”. Check the spelling or try a shorter title.' : 'Find any movie or show by its title.'));
-      } else if (homeState.year) {
-        empty.appendChild(h('strong', '', 'Nothing from ' + yearLabel(homeState.year)));
-        empty.appendChild(h('span', '', 'No ' + (tab === 'show' ? 'shows' : 'movies') + ' match that year.'));
-        var all = empty.appendChild(h('button', 'btn primary', 'Show any year'));
-        all.onclick = function () { homeState.year = ''; store('year', ''); renderHome(); };
       } else {
         empty.appendChild(h('strong', '', 'Ororo sent an empty list'));
         empty.appendChild(h('span', '', 'Pull down to try again, or sign out and back in.'));
@@ -522,6 +456,8 @@
     function fill(list, upTo) {
       items = list;
       rendered = 0;
+      lastYear = null;
+      byYear = (tab === 'movie' || tab === 'show') && SORTS[homeState.sort][0] === 'year';
       grid.innerHTML = '';
       more(upTo || CHUNK);
       empty.hidden = list.length > 0;
@@ -530,7 +466,7 @@
 
     if (tab === 'continue') fill(continueItems(), homeState.rendered);
     else if (tab === 'search') fill(searchResults(homeState.query));
-    else fill(shown(tab), homeState.rendered);
+    else fill(sorted(tab), homeState.rendered);
 
     new IntersectionObserver(function (entries) {
       if (entries[0].isIntersecting && rendered < items.length) more();
@@ -583,11 +519,6 @@
       var pair = actions.appendChild(h('div', 'pair'));
       if (at) pair.appendChild(h('button', 'btn', 'Start over')).onclick = function () { start(media, 0); };
       pair.appendChild(downloadAction('movie', item.id, 'btn', false));
-      var watched = isWatched('movie', item.id);
-      pair.appendChild(h('button', 'btn', watched ? 'Mark as unwatched' : 'Mark as watched')).onclick = function () {
-        setWatched('movie', item.id, !isWatched('movie', item.id));
-        renderDetail(item);
-      };
       return;
     }
 
@@ -672,17 +603,7 @@
         }
         paint();
         row.onclick = function () { playEpisode(i); };
-        var more = wrap.appendChild(h('button', 'row-btn'));
-        more.innerHTML = ICON.more;
-        more.setAttribute('aria-label', 'More for ' + (ep.title || 'episode ' + ep.number));
-        more.setAttribute('aria-haspopup', 'dialog');
-        more.onclick = function () {
-          var seen = isWatched('episode', ep.id);
-          sheet(ep.title || 'Episode ' + ep.number, 'Season ' + ep.season + ', episode ' + ep.number, [
-            { label: seen ? 'Mark as unwatched' : 'Mark as watched', run: function () { setWatched('episode', ep.id, !seen); paint(); paintPlay(); } },
-            downloadSheetAction('episode', ep.id)
-          ]);
-        };
+        wrap.appendChild(downloadAction('episode', ep.id, 'row-btn', true));
       });
     }
   }
