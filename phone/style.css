@@ -203,6 +203,11 @@ a.btn { color: var(--text); }
 .controls .menu { flex: 1 1 8rem; }
 .controls { align-items: center; }
 .controls .dlsq { margin-left: auto; }
+.pipsq {
+  flex: none; width: 2.75rem; height: 2.75rem; display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: var(--r); background: var(--fill); color: var(--text); padding: 0; margin-left: auto;
+}
+.controls .dlsq { margin-left: 0; }
 .controls .pill { width: 100%; justify-content: space-between; }
 .controls .pill span { overflow: hidden; text-overflow: ellipsis; }
 .playrow { display: flex; gap: .5rem; }

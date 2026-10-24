@@ -181,6 +181,7 @@
     play: svg('<path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/>', 'ico sm'),
     chevrons: svg('<path d="M8 10l4-4 4 4M8 14l4 4 4-4"/>', 'ico sm'),
     clear: svg('<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none" opacity=".35"/><path d="M9 9l6 6M15 9l-6 6" stroke="#fff"/>'),
+    pip: svg('<rect x="3" y="5" width="18" height="14" rx="3"/><rect x="11" y="11" width="7" height="5" rx="1.2" fill="currentColor"/>'),
     download: svg('<path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/>'),
     check: svg('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/>'),
     watched: svg('<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path d="M8 12.5l2.7 2.7L16 9.8" stroke="var(--surface)" stroke-width="2"/>', 'ico sm')
@@ -625,6 +626,24 @@
       subsLabel.textContent = 'Subtitles: ' + selText(subsSel);
       qualLabel.textContent = 'Quality: ' + selText(qualSel);
     }
+    // Picture-in-Picture: iOS may refuse it in the Home Screen app, so say why on screen instead of doing nothing.
+    var pipBtn = h('button', 'pipsq');
+    pipBtn.type = 'button';
+    pipBtn.setAttribute('aria-label', 'Picture in Picture');
+    pipBtn.innerHTML = ICON.pip;
+    pipBtn.addEventListener('click', function () {
+      try {
+        if (document.pictureInPictureElement) { document.exitPictureInPicture(); return; }
+        if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
+          video.requestPictureInPicture().catch(function (e) { toast('Picture in Picture: ' + (e && e.name || 'refused')); });
+        } else if (video.webkitSupportsPresentationMode && video.webkitSupportsPresentationMode('picture-in-picture')) {
+          video.webkitSetPresentationMode(video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+        } else {
+          toast('Picture in Picture is not available here');
+        }
+      } catch (e) { toast('Picture in Picture: ' + (e && e.name || 'failed')); }
+    });
+    $(ui, '.controls').appendChild(pipBtn);
     if (media.kind === 'movie') $(ui, '.controls').appendChild(downloadAction('movie', media.id, 'dlsq', true));
     var master = '', mp4 = '', variants = [], quality = 0, resume = startAt || 0, currentUrl = '', closed = false;
     var subs = [], saveTimer, flashTimer;
