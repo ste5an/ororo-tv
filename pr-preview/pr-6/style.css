@@ -204,7 +204,6 @@ svg { display: block; flex: none; }
 .now { margin: 0 0 .75rem; font-weight: 600; }
 .desc { color: var(--text); opacity: .86; line-height: 1.5; margin: 1rem 0 0; }
 .actions { display: grid; gap: .5rem; }
-.actions .pair { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
 .btn {
   display: flex; align-items: center; justify-content: center; gap: .5rem; padding: .7rem 1rem;
   border: 0; border-radius: var(--r); background: var(--fill); color: var(--text); font-weight: 600; text-align: center;
@@ -218,9 +217,19 @@ a.btn { color: var(--text); }
 
 .controls { display: flex; flex-wrap: wrap; gap: .5rem; margin: .75rem 0 .25rem; }
 .controls .menu { flex: 1 1 8rem; }
+.controls { align-items: center; }
+.controls .dlsq { margin-left: auto; }
 .controls .pill { width: 100%; justify-content: space-between; }
 .controls .pill span { overflow: hidden; text-overflow: ellipsis; }
-.controls .dl { flex: 1 1 8rem; }
+.playrow { display: flex; gap: .5rem; }
+.playrow .btn.primary { flex: 1; min-width: 0; }
+.dlsq {
+  flex: none; width: 2.75rem; height: 2.75rem; display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: var(--r); background: var(--fill); color: var(--text); padding: 0;
+}
+.playrow .dlsq { width: 3.1rem; height: 3.1rem; }
+.dlsq:disabled { opacity: .55; }
+.dlsq.ready { color: var(--accent); }
 .note { color: var(--dim); font-size: .8rem; margin: .4rem 0 0; min-height: 1.1em; }
 
 /* ---- Seasons and episodes: one inset list ---- */
