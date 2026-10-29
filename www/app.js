@@ -667,10 +667,13 @@
       { label: function () { return '◀◀  10s'; }, act: function () { seeker.press(-1); seeker.release(-1); } },
       { label: function () { return video.paused ? '▶  Play' : '❚❚  Pause'; }, act: toggle },
       { label: function () { return '10s  ▶▶'; }, act: function () { seeker.press(1); seeker.release(1); } },
+      { label: function () { return 'Next  ▶|'; }, show: hasNext, act: playNext },
       { label: function () { return 'CC   ' + (subIdx < 0 ? 'Subtitles off' : subLabel(subIdx)); }, act: openSubs },
       { label: function () { return 'Quality: ' + qualityOptions()[quality].label; }, act: openQuality }
     ];
     buttons.forEach(function (b) { b.el = actionsEl.appendChild(h('div', 'pbtn')); });
+    function hasNext() { return !!(media.episodes && media.episodes[media.index + 1]); }
+    function visibleButtons() { return buttons.filter(function (b) { return !b.show || b.show(); }); }
 
     function key() { return media.kind === 'movie' ? 'movie' : 'episode'; }
     function save() {
@@ -705,7 +708,9 @@
       timeEl.textContent = clock(t) + (isFinite(d) ? '  /  ' + clock(d) : '');
       hintEl.textContent = ctrlFocus === -1 ? '◀ ▶ seek    ▼ buttons    Back close'
         : '◀ ▶ choose    OK select    ▲ progress bar    Back close';
-      buttons.forEach(function (b, i) {
+      var row = visibleButtons();
+      buttons.forEach(function (b) { b.el.style.display = row.indexOf(b) < 0 ? 'none' : ''; });
+      row.forEach(function (b, i) {
         b.el.textContent = b.label();
         b.el.classList.toggle('focus', i === ctrlFocus);
       });
@@ -974,8 +979,11 @@
     });
     video.addEventListener('ended', function () {
       savePos(key(), media.id, video.duration, video.duration);
-      var nextEp = media.episodes && media.episodes[media.index + 1];
-      if (!nextEp) { pop(); return; }
+      if (!hasNext()) { pop(); return; }
+      playNext();
+    });
+    function playNext() {
+      var nextEp = media.episodes[media.index + 1];
       media.index++;
       media.id = nextEp.id;
       media.sub = 'Season ' + nextEp.season + ' · Episode ' + nextEp.number + (nextEp.title ? ' · ' + nextEp.title : '');
@@ -985,7 +993,7 @@
       variants = [];
       seeker.cancel();
       begin(resumeAt(posOf('episode', nextEp.id)));
-    });
+    }
 
     function toggle() {
       var p;
@@ -1021,9 +1029,9 @@
           else if (k === 'enter') toggle();
         } else {                                    // the buttons
           if (k === 'left') ctrlFocus = Math.max(0, ctrlFocus - 1);
-          else if (k === 'right') ctrlFocus = Math.min(buttons.length - 1, ctrlFocus + 1);
+          else if (k === 'right') ctrlFocus = Math.min(visibleButtons().length - 1, ctrlFocus + 1);
           else if (k === 'up') ctrlFocus = -1;
-          else if (k === 'enter') buttons[ctrlFocus].act();
+          else if (k === 'enter') visibleButtons()[ctrlFocus].act();
         }
         renderOsd();
         return true;
