@@ -510,8 +510,11 @@
     function epLabel(ep) { return 'Season ' + ep.season + ' · Episode ' + ep.number + (ep.title ? ' · ' + ep.title : ''); }
     function next() {
       // The episode after the last one finished, or the one in progress.
-      var lastSeen = -1;
-      episodes.forEach(function (ep, i) { if (posOf('episode', ep.id)) lastSeen = i; });
+      var lastSeen = -1, latest = -1;
+      episodes.forEach(function (ep, i) {
+        var p = posOf('episode', ep.id);
+        if (p && (p.at || 0) >= latest) { latest = p.at || 0; lastSeen = i; }
+      });
       if (lastSeen < 0) return episodes[0];
       return finished(posOf('episode', episodes[lastSeen].id)) && episodes[lastSeen + 1] ? episodes[lastSeen + 1] : episodes[lastSeen];
     }
