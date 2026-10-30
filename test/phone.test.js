@@ -260,7 +260,7 @@ test('light and dark both read well: text stays at least 4.5:1 against its backg
       const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
       const probe = (v) => { const el = document.createElement('i'); el.style.color = css.getPropertyValue(v); document.body.appendChild(el); const c = parse(getComputedStyle(el).color); el.remove(); return c; };
       const bg = probe('--bg'), surface = probe('--surface');
-      return { text: ratio(probe('--text'), bg), dim: ratio(probe('--dim'), bg), dimOnSurface: ratio(probe('--dim'), surface), accent: ratio(probe('--accent'), bg), onAccent: ratio(probe('--on-accent'), probe('--accent')) };
+      return { text: ratio(probe('--text'), bg), dim: ratio(probe('--dim'), bg), dimOnSurface: ratio(probe('--dim'), surface), accent: ratio(probe('--accent'), bg), blue: ratio(probe('--blue'), bg), onAccent: ratio(probe('--on-accent'), probe('--accent-fill')) };
     });
     for (const k of Object.keys(ratios)) assert.ok(ratios[k] >= 4.5, scheme + ' ' + k + ' is ' + ratios[k].toFixed(2));
   }
