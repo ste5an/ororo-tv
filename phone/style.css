@@ -1,7 +1,9 @@
 /*
  * Ororo TV for iPhone. Posters carry the colour; the interface uses three: Midnight Black, Electric Blue and
- * Cantaloupe Orange. Orange is for the main action (Play), blue for progress and selection, and a soft
- * blue-to-orange glow sits behind the top of the screen.
+ * Cantaloupe Orange. Orange is for the main action (Play), blue for selection, and the two meet in a gradient
+ * (--grad) that marks progress, the brand and the current episode. Behind the top of the screen an arc of light
+ * runs from blue on the left to orange on the right, like a sunrise over a dark horizon, with an orange ember
+ * under the tab bar.
  * Follows the system's light and dark appearance, Dynamic Type (rem = the reader's text size on iOS),
  * Reduce Motion / Reduce Transparency / Increase Contrast, and the safe areas.
  *
@@ -22,9 +24,14 @@
   --accent-fill: #fc734d;
   --on-accent: #02070a;
   --blue: #0270a8;
-  --glow: radial-gradient(90% 55% at 15% -5%, rgba(2,151,222,.22), transparent 70%),
-          radial-gradient(80% 45% at 95% 0%, rgba(252,115,77,.18), transparent 70%);
-  --cta-shadow: 0 6px 18px rgba(252,115,77,.3);
+  --grad: linear-gradient(100deg, var(--blue), var(--accent));
+  --grad-fill: linear-gradient(90deg, #0297de, #fc734d);
+  --arc-blue: #0297de;
+  --arc-orange: #fc734d;
+  --arc-opacity: .7;
+  --ember: radial-gradient(60% 22% at 80% 100%, rgba(252,115,77,.16), transparent 70%),
+           radial-gradient(50% 18% at 10% 100%, rgba(2,151,222,.12), transparent 70%);
+  --cta-shadow: -12px 8px 22px -6px rgba(2,151,222,.35), 12px 8px 22px -6px rgba(252,115,77,.45);
   --glass: rgba(246,250,253,.72);
   --glass-edge: rgba(255,255,255,.6);
   --shadow: 0 8px 28px rgba(2,30,50,.14);
@@ -46,9 +53,12 @@
     --line: rgba(140,200,240,.16);
     --accent: #fc734d;
     --blue: #0297de;
-    --glow: radial-gradient(90% 55% at 15% -5%, rgba(2,151,222,.38), transparent 70%),
-            radial-gradient(80% 45% at 95% 0%, rgba(252,115,77,.26), transparent 70%);
-    --cta-shadow: 0 6px 24px rgba(252,115,77,.35);
+    --arc-blue: #0297de;
+    --arc-orange: #fc734d;
+    --arc-opacity: 1;
+    --ember: radial-gradient(60% 22% at 80% 100%, rgba(252,115,77,.28), transparent 70%),
+             radial-gradient(50% 18% at 10% 100%, rgba(2,151,222,.2), transparent 70%);
+    --cta-shadow: -14px 10px 28px -6px rgba(2,151,222,.55), 14px 10px 28px -6px rgba(252,115,77,.55);
     --glass: rgba(11,26,36,.66);
     --glass-edge: rgba(140,200,240,.16);
     --shadow: 0 8px 28px rgba(0,0,0,.6);
@@ -56,6 +66,9 @@
 }
 @media (prefers-contrast: more) {
   :root { --line: currentColor; --dim: var(--text); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root { --arc-opacity: .35; }
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -72,7 +85,22 @@ body {
   background: var(--bg); color: var(--text);
 }
 body.bare { padding-bottom: var(--bottom); }
-body::before { content: ''; position: fixed; z-index: -1; inset: 0 0 auto; height: 70vh; background: var(--glow); pointer-events: none; }
+/* The arc: the lower rim of a circle centred above the screen glows (conic gradient: orange at the right, blue at
+   the left), masked to a ring that fades upward and softened with a blur. --rim is where it crosses the middle.
+   The box stays screen-wide so it never widens the page. */
+body::before {
+  --rim: min(34vh, 18rem);
+  content: ''; position: fixed; z-index: -1; pointer-events: none; left: 0; top: 0; width: 100%; height: calc(var(--rim) + 3rem);
+  background: conic-gradient(from 90deg at 50% calc(var(--rim) - 85vw), var(--arc-orange), var(--arc-orange) 25deg, var(--arc-blue) 155deg, var(--arc-blue) 205deg, var(--arc-orange) 335deg);
+  -webkit-mask-image: radial-gradient(circle 85vw at 50% calc(var(--rim) - 85vw), transparent 70%, rgba(0,0,0,.18) 88%, rgba(0,0,0,.6) 97.5%, #000 99.2%, transparent 100%);
+  mask-image: radial-gradient(circle 85vw at 50% calc(var(--rim) - 85vw), transparent 70%, rgba(0,0,0,.18) 88%, rgba(0,0,0,.6) 97.5%, #000 99.2%, transparent 100%);
+  filter: blur(14px); opacity: var(--arc-opacity);
+}
+/* Signed in, the arc rises behind the large title and scrolls away with it; a show or movie page has its own
+   artwork instead. */
+body:not(.bare)::before { position: absolute; --rim: calc(var(--top) + 4.75rem); }
+body:has(.detail)::before { display: none; }
+body::after { content: ''; position: fixed; z-index: -1; inset: 0; background: var(--ember); pointer-events: none; }
 body { position: relative; z-index: 0; }
 [hidden] { display: none !important; }
 a { color: inherit; text-decoration: none; }
@@ -158,7 +186,7 @@ svg { display: block; flex: none; }
 }
 .card .sub { font-size: .72rem; color: var(--dim); }
 .bar { position: absolute; left: .5rem; right: .5rem; bottom: .5rem; height: 4px; border-radius: 2px; background: rgba(0,0,0,.55); overflow: hidden; }
-.bar i { display: block; height: 100%; background: var(--blue); }
+.bar i { display: block; height: 100%; background: var(--grad-fill); }
 .card:active .poster { transform: scale(.97); }
 @media (prefers-reduced-motion: no-preference) { .poster { transition: transform .12s; } }
 
@@ -181,7 +209,11 @@ svg { display: block; flex: none; }
 .detail { position: relative; }
 .detail .back { position: absolute; z-index: 6; top: calc(var(--top) + .5rem); left: .75rem; box-shadow: var(--shadow); background: rgba(0,0,0,.45); color: #fff; border-color: rgba(255,255,255,.25); }
 .stage { position: relative; aspect-ratio: 16 / 9; background: #000 center / cover no-repeat; }
-.stage::after { content: ''; position: absolute; inset: 0; background: linear-gradient(0deg, var(--bg), transparent 55%); pointer-events: none; }
+.stage::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(0deg, var(--bg), transparent 55%),
+              linear-gradient(110deg, rgba(2,151,222,.28), transparent 45%, transparent 60%, rgba(252,115,77,.28));
+}
 .stage.playing { position: sticky; top: 0; z-index: 7; padding-top: var(--top); aspect-ratio: auto; background: #000; }
 .stage.playing::after { display: none; }
 .stage video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
@@ -244,19 +276,20 @@ a.btn { color: var(--text); }
 .yearhead:first-child { margin-top: 0; }
 .ep .state { flex: none; width: 2.5rem; display: flex; justify-content: flex-end; color: var(--blue); }
 .ep .state .mini { width: 100%; }
-.eprow.current { background: var(--fill); box-shadow: inset 3px 0 0 var(--blue); }
+.eprow.current { position: relative; background: linear-gradient(90deg, rgba(2,151,222,.16), rgba(252,115,77,.08) 70%, transparent); }
+.eprow.current::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: linear-gradient(180deg, #0297de, #fc734d); }
 .row-btn {
   flex: none; border: 0; background: none; color: var(--dim); padding: 0; display: flex; align-items: center; justify-content: center;
   font-size: .8rem; font-weight: 700;
 }
 .row-btn:disabled { opacity: .55; }
 .mini { height: 4px; border-radius: 2px; overflow: hidden; background: var(--fill); }
-.mini i { display: block; height: 100%; background: var(--blue); }
+.mini i { display: block; height: 100%; background: var(--grad-fill); }
 
 /* ---- Login and loading ---- */
 .login { max-width: 26rem; margin: 0 auto; padding: calc(var(--top) + 4.5rem) 1.5rem 2.5rem; }
 .brand { font-size: 1.6rem; font-weight: 800; letter-spacing: -.03em; }
-.brand span { color: var(--accent); }
+.brand span { color: var(--accent); background: var(--grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 .login .brand { font-size: 2.6rem; }
 .login > p, .login form > p:first-of-type { color: var(--dim); margin-top: .5rem; }
 .login label { display: block; margin: 1.25rem 0 .35rem; font-size: .9rem; color: var(--dim); }
@@ -268,7 +301,12 @@ a.btn { color: var(--text); }
 .login .err { min-height: 1.4em; margin-top: .75rem; color: #c3271c; font-size: .9rem; }
 @media (prefers-color-scheme: dark) { .login .err { color: #ff8f78; } }
 .loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 1rem; padding: 1.5rem; text-align: center; color: var(--dim); }
-.spinner { width: 2.5rem; height: 2.5rem; border-radius: 50%; border: 4px solid var(--fill); border-top-color: var(--blue); animation: spin .9s linear infinite; }
+.spinner {
+  width: 2.5rem; height: 2.5rem; border-radius: 50%; animation: spin .9s linear infinite;
+  background: conic-gradient(transparent 10%, #0297de 45%, #fc734d);
+  -webkit-mask-image: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  mask-image: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+}
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
 
