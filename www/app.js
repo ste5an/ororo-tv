@@ -116,6 +116,14 @@
     return u;
   }
 
+  // Only Ororo's own hosts ever get the account login.
+  function isOroroHost(u) {
+    var m = /^(https:\/\/[^\/?#]+)/i.exec(String(u || ''));
+    return !!m && API_HOSTS.indexOf(m[1].toLowerCase()) >= 0;
+  }
+  // A URL from the API, made safe inside CSS url("…").
+  function cssUrl(u) { return 'url("' + String(u).replace(/["\\\n\r]/g, function (c) { return encodeURIComponent(c); }) + '")'; }
+
   // ---------------------------------------------------------------- catalogue, progress, history
 
   var catalog = { movie: [], show: [] }, byId = { movie: {}, show: {} };
@@ -353,7 +361,7 @@
       entries.forEach(function (en) {
         if (!en.isIntersecting) return;
         var p = en.target;
-        if (p.dataset.src) p.style.backgroundImage = 'url("' + p.dataset.src + '")';
+        if (p.dataset.src) p.style.backgroundImage = cssUrl(p.dataset.src);
         lazy.unobserve(p);
       });
     }, { root: box, rootMargin: '700px 0px' });
@@ -471,7 +479,7 @@
   function detailsBase(item, cls) {
     var el = h('div', 'screen details ' + cls);
     el.innerHTML = '<div class="backdrop"></div><div class="shade"></div><div class="info"><h1></h1><div class="meta"></div><p class="desc"></p></div>';
-    if (item.backdrop || item.poster) $(el, '.backdrop').style.backgroundImage = 'url("' + (item.backdrop || item.poster) + '")';
+    if (item.backdrop || item.poster) $(el, '.backdrop').style.backgroundImage = cssUrl(item.backdrop || item.poster);
     $(el, 'h1').textContent = item.name;
     $(el, '.meta').textContent = [item.year, item.rating ? '★ ' + item.rating.toFixed(1) : '', item.genres.slice(0, 3).join(', ')]
       .filter(Boolean).join('   ·   ');
@@ -816,6 +824,7 @@
         });
       }
       return get({}).catch(function (e) {
+        if (!isOroroHost(url)) throw new Error((e.status ? e.message : 'blocked') + ', ' + url.slice(0, 60));
         return get({ headers: { Authorization: basicAuth() } }).catch(function (e2) {
           throw new Error((e.status ? e.message : 'blocked') + ' / ' + (e2.status ? e2.message : 'blocked') + ', ' + url.slice(0, 60));
         });
