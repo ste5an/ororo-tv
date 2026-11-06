@@ -88,6 +88,14 @@
     return u.replace(/^http:\/\//, 'https://');
   }
 
+  // Only Ororo's own hosts ever get the account login.
+  function isOroroHost(u) {
+    var m = /^(https:\/\/[^\/?#]+)/i.exec(String(u || ''));
+    return !!m && API_HOSTS.indexOf(m[1].toLowerCase()) >= 0;
+  }
+  // A URL from the API, made safe inside CSS url("…").
+  function cssUrl(u) { return 'url("' + String(u).replace(/["\\\n\r]/g, function (c) { return encodeURIComponent(c); }) + '")'; }
+
   // ---------------------------------------------------------------- catalogue, progress, history
 
   var catalog = { movie: [], show: [] }, byId = { movie: {}, show: {} }, loaded = false;
@@ -481,7 +489,7 @@
     window.scrollTo(0, 0);
     var detail = $(app, '.detail'), stage = $(app, '.stage'), actions = $(app, '.actions'), now = $(app, '.now');
     $(app, '.back').onclick = function () { go('#/'); };
-    if (item.backdrop || item.poster) stage.style.backgroundImage = 'url("' + (item.backdrop || item.poster) + '")';
+    if (item.backdrop || item.poster) stage.style.backgroundImage = cssUrl(item.backdrop || item.poster);
     stage.setAttribute('aria-label', item.name);
     $(app, 'h1').textContent = item.name;
     $(app, '.meta').textContent = [item.year, item.rating ? '★ ' + item.rating.toFixed(1) : '', item.genres.slice(0, 3).join(', ')]
@@ -669,7 +677,7 @@
       function get(opts) {
         return fetch(url, opts).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); });
       }
-      return get({}).catch(function () { return get({ headers: { Authorization: basicAuth() } }); });
+      return get({}).catch(function (e) { if (!isOroroHost(url)) throw e; return get({ headers: { Authorization: basicAuth() } }); });
     }
     function subtitleList(raw) {
       if (!raw) return [];
