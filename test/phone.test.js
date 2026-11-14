@@ -236,6 +236,24 @@ test('a half-watched movie offers Resume and Start over', async () => {
   assert.equal(await page.locator('.actions > .btn').innerText(), 'Start over');
 });
 
+test('going back from a movie shows the same list, not one drawn again from the top', async () => {
+  await signIn();
+  await page.click('.tabbar a:has-text("Shows")');
+  await page.click('.tabbar a:has-text("Movies")');
+  await page.waitForFunction(() => location.hash === '#/tab/movie' && document.querySelector('h1').textContent === 'Movies');
+  await page.evaluate(() => { document.querySelector('.card').dataset.kept = '1'; });
+  await page.click('.card');
+  await page.waitForSelector('.playrow');
+  await page.goBack();
+  await page.waitForSelector('.card');
+  assert.equal(await page.locator('.card[data-kept]').count(), 1, 'the list was drawn again');
+  assert.equal(await page.locator('h1').innerText(), 'Movies');
+  // Switching to another tab draws that one fresh.
+  await page.click('.tabbar a:has-text("Shows")');
+  await page.waitForFunction(() => document.querySelector('h1').textContent === 'Shows');
+  assert.equal(await page.locator('.card[data-kept]').count(), 0);
+});
+
 test('Sign out asks first, and Cancel keeps you signed in', async () => {
   await signIn();
   await page.click('.account');
