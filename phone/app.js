@@ -171,20 +171,51 @@
   }
 
   function route() {
-    if (player) { player.destroy(); player = null; }
-    if (!creds()) { chrome(false); return renderLogin(); }
+    // What was watched changes the progress bars and Continue, so a kept list is drawn again.
+    if (player) { player.destroy(); player = null; keptHome = null; }
+    if (!creds()) { keptHome = null; chrome(false); return renderLogin(); }
     if (!loaded) { chrome(false); return boot(); }
     var parts = location.hash.replace(/^#\/?/, '').split('/');
-    if (parts[0] === 'tab' && TABS.some(function (t) { return t[0] === parts[1]; })) {
-      homeState.tab = parts[1];
+    var item = parts[0] === 'movie' || parts[0] === 'show' ? byId[parts[0]][parts[1]] : null;
+    var from = view;
+    view = item ? 'detail' : 'home';
+    if (item) { keepHome(); chrome(true, homeState.tab || (item.kind === 'show' ? 'show' : 'movie')); renderDetail(item); return; }
+    var tab = parts[0] === 'tab' && TABS.some(function (t) { return t[0] === parts[1]; }) ? parts[1] : null;
+    // A tab starts from the top when you switch to it, not when you come back to it from a movie or show.
+    if (tab && (tab !== homeState.tab || from !== 'detail')) {
+      keptHome = null;
+      homeState.tab = tab;
       homeState.rendered = CHUNK;
       homeState.scroll = 0;
     }
-    var item = parts[0] === 'movie' || parts[0] === 'show' ? byId[parts[0]][parts[1]] : null;
-    if (item) { chrome(true, homeState.tab || (item.kind === 'show' ? 'show' : 'movie')); renderDetail(item); }
-    else { if (!homeState.tab) homeState.tab = continueItems().length ? 'continue' : 'movie'; chrome(true, homeState.tab); renderHome(); }
+    if (!homeState.tab) homeState.tab = continueItems().length ? 'continue' : 'movie';
+    chrome(true, homeState.tab);
+    if (!restoreHome()) renderHome();
   }
   window.addEventListener('hashchange', route);
+
+  // While a movie or show page is open, the list it was opened from is kept as it is (posters, scroll, everything
+  // drawn so far), so going back puts it straight back instead of drawing it again from the top.
+  var keptHome = null, view = null;
+  function keepHome() {
+    if (!$(app, '.grid')) return;
+    keptHome = {
+      nodes: [].slice.call(app.childNodes), scroll: window.scrollY, tab: homeState.tab, sort: homeState.sort,
+      query: homeState.query, movie: catalog.movie, show: catalog.show
+    };
+    keptHome.nodes.forEach(function (n) { app.removeChild(n); });
+  }
+  function restoreHome() {
+    var k = keptHome;
+    keptHome = null;
+    // Fresh lists from Ororo, or another tab or sort, need drawing again.
+    if (!k || k.tab !== homeState.tab || k.sort !== homeState.sort || k.query !== homeState.query ||
+      k.movie !== catalog.movie || k.show !== catalog.show) return false;
+    app.innerHTML = '';
+    k.nodes.forEach(function (n) { app.appendChild(n); });
+    window.scrollTo(0, k.scroll);
+    return true;
+  }
 
   function boot() {
     cacheGet().then(function (saved) {
