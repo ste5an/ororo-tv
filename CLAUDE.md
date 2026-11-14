@@ -11,9 +11,9 @@ do it, and let them do the taps on the TV.
 `phone/index.html`, `style.css`, `app.js`, `manifest.webmanifest`: the same Ororo API, storage keys and
 `SeekController` as the TV app, laid out for touch, with hash routes `#/`, `#/movie/ID`, `#/show/ID`. Playback uses
 the iPhone's own `<video controls playsinline>`; subtitles are fetched, converted to WebVTT and added as blob
-`<track>`s so the full-screen player shows them. A push to `main` touching `phone/`, `www/seek.js` or `www/icon.png`
-publishes it to https://ste5an.github.io/ororo-tv/ (`.github/workflows/pages.yml` copies `www/seek.js` and
-`www/icon.png` next to it). To try it locally, copy those two files into a copy of `phone/` and open `index.html`.
+`<track>`s so the full-screen player shows them. A push to `main` touching `phone/`, `www/seek.js`, `www/core.js` or
+`www/icon.png` publishes it to https://ste5an.github.io/ororo-tv/ (`.github/workflows/pages.yml` copies those three
+`www/` files next to it). To try it locally, copy them into a copy of `phone/` and open `index.html`.
 
 **Speed.** `phone/sw.js` keeps the app's own files on the phone (stale-while-revalidate, checked against the server
 with the ETag), so the app opens at once and offline; when a file changed it tells the page, which shows "A new version
@@ -60,6 +60,11 @@ python3 build.py --sign <profile> --install <TV IP>
 
 ## The code (`www/app.js`)
 
+- **Shared with the iPhone app:** `www/core.js` (`window.OroroCore`, loaded before `app.js` on both) holds the
+  small helpers, `api()`, the catalogue (`catalog`, `byId`, `setCatalog`, `loadCatalog`), positions and history. Each
+  app picks the names it uses at the top of its `app.js` and calls `C.configure()` with what differs (TV: built-in
+  `ORORO_CREDENTIALS`, 40 s per host; phone: 12 s per host, remembered `apihost`, `httpsOnly`). A fix there reaches
+  both apps; it runs on the TV, so the Chromium 76 rules below apply to it too. UI code stays in each `app.js`.
 - **Target:** the Chromium inside Tizen. Tizen 6 is Chromium 76: no `?.`, no `??`, no flexbox `gap`, no `inset`,
   no `aspect-ratio`. Keep it plain ES2017 with no libraries or frameworks.
 - **API:** `api(path)` → JSON from `/api/v2` with HTTP Basic auth, trying `front.ororo.tv`, `front.ororo-mirror.tv`
@@ -94,5 +99,5 @@ python3 build.py --sign <profile> --install <TV IP>
 
 ## Checking a change
 
-`node --test test/seek.test.js` (seek logic, fake clock), `node --test test/phone.test.js` (the iPhone app in headless Chromium with a fake Ororo; CI installs Playwright 1.63.0 for it, and locally `npm install --no-save playwright@1.63.0 && npx playwright install chromium` does the same), `node --check www/app.js`, then build and install on the TV and have the user try it. To see a screen without a
+`node --test test/seek.test.js` (seek logic, fake clock), `node --test test/core.test.js` (shared helpers), `node --test test/phone.test.js` (the iPhone app in headless Chromium with a fake Ororo; CI installs Playwright 1.63.0 for it, and locally `npm install --no-save playwright@1.63.0 && npx playwright install chromium` does the same), `node --check www/app.js www/core.js`, then build and install on the TV and have the user try it. To see a screen without a
 TV, `python3 build.py`, then open `out/index.html` in Chrome at 1920×1080 (the API calls need a login).

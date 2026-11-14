@@ -67,7 +67,7 @@ let server, base, browser, ctx, page, problems;
 before(async () => {
   server = http.createServer((req, res) => {
     const name = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
-    const file = name === 'seek.js' ? path.join(ROOT, 'www/seek.js') : name === 'icon.png' ? path.join(ROOT, 'www/icon.png') : path.join(ROOT, 'phone', name);
+    const file = name === 'seek.js' || name === 'core.js' ? path.join(ROOT, 'www', name) : name === 'icon.png' ? path.join(ROOT, 'www/icon.png') : path.join(ROOT, 'phone', name);
     fs.readFile(file, (err, data) => {
       if (err || !file.startsWith(ROOT)) { res.statusCode = 404; res.end(); return; }
       res.setHeader('content-type', TYPES[path.extname(file)] || 'application/octet-stream');

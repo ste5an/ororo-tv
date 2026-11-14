@@ -1,4 +1,4 @@
-# Publishes the iPhone web app (phone/, plus the shared www/seek.js and icon).
+# Publishes the iPhone web app (phone/, plus the shared www/seek.js, www/core.js and icon).
 #   push to main  -> https://ste5an.github.io/ororo-tv/
 #   pull request  -> https://ste5an.github.io/ororo-tv/pr-preview/pr-<number>/   (removed when the PR closes)
 # Both live on the gh-pages branch: GitHub Pages must be set to "Deploy from a branch: gh-pages, / (root)".
@@ -7,10 +7,10 @@ name: Phone app
 on:
   push:
     branches: [main]
-    paths: ['phone/**', 'www/seek.js', 'www/icon.png', '.github/workflows/pages.yml']
+    paths: ['phone/**', 'www/seek.js', 'www/core.js', 'www/icon.png', '.github/workflows/pages.yml']
   pull_request:
     types: [opened, reopened, synchronize, closed]
-    paths: ['phone/**', 'www/seek.js', 'www/icon.png', '.github/workflows/pages.yml']
+    paths: ['phone/**', 'www/seek.js', 'www/core.js', 'www/icon.png', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Assemble the site
-        run: mkdir site && cp -R phone/. site/ && cp www/seek.js www/icon.png site/ && touch site/.nojekyll
+        run: mkdir site && cp -R phone/. site/ && cp www/seek.js www/core.js www/icon.png site/ && touch site/.nojekyll
       - name: Publish to the site root (keeps the PR previews)
         uses: JamesIves/github-pages-deploy-action@fa24774553152dd7873cd16ebd8d959b010c5445 # v4.9.0
         with:
@@ -44,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Assemble the site
-        run: mkdir site && cp -R phone/. site/ && cp www/seek.js www/icon.png site/ && touch site/.nojekyll
+        run: mkdir site && cp -R phone/. site/ && cp www/seek.js www/core.js www/icon.png site/ && touch site/.nojekyll
       - name: Publish or remove this pull request's preview
         uses: rossjrw/pr-preview-action@ffa7509e91a3ec8dfc2e5536c4d5c1acdf7a6de9 # v1.8.1
         with:
