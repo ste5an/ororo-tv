@@ -101,11 +101,12 @@ Updates must be signed with the same certificate as the installed copy. Otherwis
 |---|---|
 | [`www/app.js`](www/app.js) | The app: API, screens, remote navigation, player, subtitles, quality |
 | [`www/seek.js`](www/seek.js) | Netflix-style seeking (taps add up, hold to scrub), separate from the UI |
+| [`www/core.js`](www/core.js) | What the TV and iPhone apps share: Ororo's API, the catalogue, where you stopped, history |
 | [`test/seek.test.js`](test/seek.test.js) | Tests for the seeking: `node --test test/seek.test.js` |
 | [`www/style.css`](www/style.css) | The look, laid out for 1920×1080 |
 | [`config.xml`](config.xml) | The Tizen app manifest |
 | [`build.py`](build.py) | Build, sign and install |
-| [`phone/`](phone) | The iPhone web app, published to GitHub Pages by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) with `www/seek.js` and the icon |
+| [`phone/`](phone) | The iPhone web app, published to GitHub Pages by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) with `www/seek.js`, `www/core.js` and the icon |
 | [`tools/make_icon.py`](tools/make_icon.py) | Draws the icons without any libraries: `www/icon.png` (TV, rounded) and `phone/apple-touch-icon.png` (iPhone, square) |
 
 ## License
