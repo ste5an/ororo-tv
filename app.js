@@ -6,37 +6,15 @@
 (function () {
   'use strict';
 
-  var API_HOSTS = ['https://front.ororo.tv', 'https://front.ororo-mirror.tv', 'https://ororo.tv'];
   var FRESH_MS = 3 * 3600 * 1000; // a saved catalogue this young is used as it is
   var CHUNK = 60;          // posters added at a time while scrolling
   var STEP = 10;           // seconds per −10 / +10 tap
-  var LANGS = {
-    en: 'English', ru: 'Русский', uk: 'Українська', es: 'Español', de: 'Deutsch', fr: 'Français', it: 'Italiano',
-    pt: 'Português', pl: 'Polski', tr: 'Türkçe', hy: 'Հայերեն', ja: '日本語', zh: '中文', ko: '한국어', ar: 'العربية',
-    he: 'עברית', cs: 'Čeština', nl: 'Nederlands', sv: 'Svenska', ro: 'Română', el: 'Ελληνικά', hu: 'Magyar'
-  };
 
-  // ---------------------------------------------------------------- helpers
+  // ---------------------------------------------------------------- helpers (shared with the TV app: www/core.js)
 
-  function h(tag, cls, text) {
-    var el = document.createElement(tag);
-    if (cls) el.className = cls;
-    if (text != null) el.textContent = text;
-    return el;
-  }
-  function $(scope, sel) { return scope.querySelector(sel); }
-  function load(key, fallback) {
-    try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
-  }
-  function store(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} }
-  function forget(key) { try { localStorage.removeItem(key); } catch (e) {} }
-  function clock(sec) {
-    sec = Math.max(0, Math.floor(sec || 0));
-    var hh = Math.floor(sec / 3600), mm = Math.floor(sec / 60) % 60, ss = sec % 60;
-    return (hh ? hh + ':' + (mm < 10 ? '0' : '') : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
-  }
-  function plain(html) { return String(html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(); }
-  function langName(code) { return LANGS[code] || String(code || '?').toUpperCase(); }
+  var C = window.OroroCore;
+  var h = C.h, $ = C.$, load = C.load, store = C.store, forget = C.forget, clock = C.clock, plain = C.plain,
+    langName = C.langName;
 
   var toastTimer;
   function toast(msg) {
@@ -47,82 +25,22 @@
     toastTimer = setTimeout(function () { el.hidden = true; }, 4500);
   }
 
-  // ---------------------------------------------------------------- Ororo's API (as in the TV app)
+  // ---------------------------------------------------------------- Ororo's API, catalogue, progress, history (www/core.js)
 
   // The host that answered last time goes first, so a dead one doesn't cost a wait on every launch.
-  var activeHost = load('apihost', null);
-  if (API_HOSTS.indexOf(activeHost) < 0) activeHost = null;
-  function creds() { return load('creds', null); }
-  function basicAuth() {
-    var c = creds() || { user: '', pass: '' };
-    return 'Basic ' + btoa(unescape(encodeURIComponent(c.user + ':' + c.pass)));
-  }
-  function httpError(status) {
-    var e = new Error(status === 401 ? 'Wrong email or password.'
-      : status === 402 ? 'Your Ororo plan doesn’t cover this, or today’s free limit is used up.'
-      : 'Ororo answered with an error (' + status + ').');
-    e.status = status;
-    return e;
-  }
-  function api(path) {
-    if (!creds()) return Promise.reject(httpError(401));
-    var headers = { Accept: 'application/json', Authorization: basicAuth() };
-    var hosts = activeHost ? [activeHost].concat(API_HOSTS.filter(function (x) { return x !== activeHost; })) : API_HOSTS.slice();
-    function attempt(i) {
-      if (i >= hosts.length) return Promise.reject(new Error('Can’t reach Ororo. Check your internet connection.'));
-      var ctrl = new AbortController(), timer = setTimeout(function () { ctrl.abort(); }, i < hosts.length - 1 ? 12000 : 40000);
-      return fetch(hosts[i] + '/api/v2' + path, { headers: headers, signal: ctrl.signal }).then(function (res) {
-        clearTimeout(timer);
-        if (activeHost !== hosts[i]) store('apihost', hosts[i]);
-        activeHost = hosts[i];
-        if (!res.ok) throw httpError(res.status);
-        return res.json().catch(function () { throw new Error('Ororo sent an answer this app doesn’t understand.'); });
-      }, function () { clearTimeout(timer); return attempt(i + 1); });
-    }
-    return attempt(0);
-  }
-  function abs(u) {
-    if (!u) return '';
-    if (u.indexOf('//') === 0) return 'https:' + u;
-    if (u.charAt(0) === '/') return (activeHost || API_HOSTS[0]) + u;
-    return u.replace(/^http:\/\//, 'https://');
-  }
+  C.configure({ skipMs: 12000, rememberHost: true, httpsOnly: true });
+  var creds = C.creds, api = C.api, abs = C.abs, basicAuth = C.basicAuth, isOroroHost = C.isOroroHost, cssUrl = C.cssUrl;
+  var catalog = C.catalog, byId = C.byId, loaded = false;
+  var posOf = C.posOf, savePos = C.savePos, finished = C.finished, resumeAt = C.resumeAt, fraction = C.fraction;
+  var remember = C.remember, continueItems = C.continueItems;
 
-  // Only Ororo's own hosts ever get the account login.
-  function isOroroHost(u) {
-    var m = /^(https:\/\/[^\/?#]+)/i.exec(String(u || ''));
-    return !!m && API_HOSTS.indexOf(m[1].toLowerCase()) >= 0;
-  }
-  // A URL from the API, made safe inside CSS url("…").
-  function cssUrl(u) { return 'url("' + String(u).replace(/["\\\n\r]/g, function (c) { return encodeURIComponent(c); }) + '")'; }
-
-  // ---------------------------------------------------------------- catalogue, progress, history
-
-  var catalog = { movie: [], show: [] }, byId = { movie: {}, show: {} }, loaded = false;
-  function slim(kind, r) {
-    return {
-      kind: kind, id: r.id, name: r.name || r.title || '', year: r.year || '',
-      poster: abs(r.poster_thumb || r.poster), backdrop: abs(r.backdrop_url),
-      rating: parseFloat(r.imdb_rating) || 0, genres: r.array_genres || [], desc: plain(r.desc),
-      pop: +r.user_popularity || 0, fresh: Date.parse(r.newest_video || r.updated_at || '') || 0
-    };
-  }
   function applyCatalog(data) {
-    catalog.movie = data.movie;
-    catalog.show = data.show;
-    ['movie', 'show'].forEach(function (k) {
-      byId[k] = {};
-      catalog[k].forEach(function (it) { byId[k][it.id] = it; });
-    });
+    C.setCatalog(data);
     loaded = true;
   }
   function loadCatalog() {
-    return Promise.all([api('/movies'), api('/shows')]).then(function (res) {
-      var data = {
-        movie: (res[0].movies || []).map(function (r) { return slim('movie', r); }),
-        show: (res[1].shows || []).map(function (r) { return slim('show', r); })
-      };
-      applyCatalog(data);
+    return C.loadCatalog().then(function (data) {
+      loaded = true;
       data.savedAt = Date.now();
       cachePut(data);
     });
@@ -153,26 +71,6 @@
   }
   function cacheClear() {
     cacheDb().then(function (db) { db.transaction('kv', 'readwrite').objectStore('kv').delete('catalog'); }).catch(function () {});
-  }
-
-  var positions = load('positions', {});
-  function posKey(kind, id) { return (kind === 'movie' ? 'm' : 'e') + id; }
-  function posOf(kind, id) { return positions[posKey(kind, id)] || null; }
-  function savePos(kind, id, t, d) {
-    if (!(t > 0) || !isFinite(d)) return;
-    positions[posKey(kind, id)] = { t: Math.floor(t), d: Math.floor(d), at: Date.now() };
-    store('positions', positions);
-  }
-  function finished(p) { return !!(p && p.d && p.t >= Math.min(p.d - 90, p.d * 0.95)); }
-  function resumeAt(p) { return p && p.t > 30 && !finished(p) ? p.t : 0; }
-  function fraction(p) { return p && p.d ? Math.min(1, p.t / p.d) : 0; }
-  function remember(kind, id) {
-    var list = load('history', []).filter(function (x) { return !(x.kind === kind && x.id === id); });
-    list.unshift({ kind: kind, id: id });
-    store('history', list.slice(0, 40));
-  }
-  function continueItems() {
-    return load('history', []).map(function (x) { return byId[x.kind][x.id]; }).filter(Boolean);
   }
 
   function svg(body, cls) {

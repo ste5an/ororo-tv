@@ -5,7 +5,7 @@
  * request previews (/pr-preview/), which must always show the branch they were built from.
  */
 var CACHE = 'ororo-app-v1';
-var SHELL = ['', 'index.html', 'style.css', 'app.js', 'seek.js', 'icon.png', 'apple-touch-icon.png', 'manifest.webmanifest'];
+var SHELL = ['', 'index.html', 'style.css', 'app.js', 'core.js', 'seek.js', 'icon.png', 'apple-touch-icon.png', 'manifest.webmanifest'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) {
